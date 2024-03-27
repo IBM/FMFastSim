@@ -1,0 +1,22 @@
+---
+gpu_info:
+    use_gpu: True
+
+model_info:
+    trained_model: Diff_MixTF.pt #location and name of the saved model
+
+valid_info:
+    plot_loc: valid_Diff_MixTF   #location to save validation results
+    valid_plots:                 #conditioning parameters for the validation plots
+        - [70,  64, 'SiW']
+        - [70, 128, 'SiW']
+        - [70, 256, 'SiW']
+
+data_info:
+    dataloader: 'shower_dataset_small'
+    root_path: '/dccstor/tsfm23/datasets/CERN_Fast_Shower'
+    geo: ["SiW"]
+    angles: [70]
+    energies: [64,128,256]
+    data_split: [0.95,0.03,0.02]   #fractions of train, validation, test sets
+    max_num_events: 10000

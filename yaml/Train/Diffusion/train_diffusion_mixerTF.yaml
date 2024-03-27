@@ -1,0 +1,83 @@
+---
+experiment:
+    study_name: Sample_Models
+    run_name:   Diffusion_MixerTrans
+    checkpoint_dir: /dccstor/kyeo_data/cern_fast_shower/chk_point
+    validation_dir: /dccstor/kyeo_data/cern_fast_shower/validation
+
+gpu_info:
+    use_gpu: True
+    use_ddp: False
+
+model_info:
+    model_type: Diffusion       #generative frameworks: AE,MLE,VAE,GAN,Diffusion
+    network_type: MixerTF       #types of the neural network: Mixer, MixerTF, PatchTSMixer, MixBeast
+    save_model: True            #save the itermediate models
+    load_file: null             #path and file name of a trained network. 
+    save_file: Diff_MixTF.pt    #path and file name to save the trained model. 
+                                #If null, the model is saved in chkeckpoint_dir using the default name
+    gen_param:                  #paramters for generative framework
+        diff_model: orig        #'orig' or 'rescaled'
+        res_conn: True          #if True: y = x+f(x)
+        dim_t_emb: 16           #dimension of positional embedding
+        dim_c: 4                #dimension of conditioning variables
+        beta_info:              #diffusion scheduler info
+            schedule: sigmoid
+            num_steps: 200
+            tau: 0.5
+    network_param: #neural network specific parameter
+        dim_r: 18
+        dim_a: 50
+        dim_v: 45
+        dim_c: 32       #For Diffusion model dim_c should be always 2*dim_t_emb
+        dim_r_enc: [18,18,18]
+        dim_a_enc: [50,50,50]
+        dim_v_enc: [45,45,45]
+        dim_r_dec: [18,18,18,18,18]
+        dim_a_dec: [50,50,50,50,50]
+        dim_v_dec: [45,45,45,45,45]
+        num_enc_heads:  [5,5]
+        num_dec_heads:  [5,5,5,5]
+        mixer_dim:  2
+        mlp_ratio:  3
+        mlp_layers: 3
+        res_conn: True
+        gated_attn: False
+        #lower_bound: 0.0
+        activation: SiLU
+        final_layer: True
+        #output_scale: 10
+        variational: False  #Use Gaussian latent state or not
+
+train_info:
+    optimizer: Adam
+    epochs: 2000
+    learning_rate: 1.e-3
+    batch_size: 128
+    lr_scheduler:
+        scheduler: scheduled  #either 'scheduled' or 'on_plateau'
+        milestones: [10,20,40,80,160,320,640]
+        gamma: 0.5
+    save_freq: 20
+    plot_freq: 20
+    plot_config:
+        - [70,  64, 'SiW']
+        - [70, 128, 'SiW']
+        - [70, 256, 'SiW']
+
+data_info:
+    dataloader: 'shower_dataset_small'
+    root_path: '/dccstor/tsfm23/datasets/CERN_Fast_Shower'
+    geo: ["SiW"]
+    angles: [70]
+    energies: [64,128,256]
+    data_split: [0.95,0.03,0.02]   #fractions of train, validation, test sets
+    max_num_events: 100000
+
+scale_info:
+    scale_method: 'log_trans'  #data transformatin: lin_trans, log_trans, or bi-log_trans
+    scale_param:
+        mag:   1.0
+        bias:  1.e-5
+        scale: 0.05
+    scale_by_energy: True  #scale the data by incident energy

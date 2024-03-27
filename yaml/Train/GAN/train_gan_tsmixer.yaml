@@ -1,0 +1,89 @@
+---
+experiment:
+    study_name: Sample_Models
+    run_name:   GAN_TSMixer
+    checkpoint_dir: /dccstor/kyeo_data/cern_fast_shower/chk_point
+    validation_dir: /dccstor/kyeo_data/cern_fast_shower/validation
+
+gpu_info:
+    use_gpu: True
+    use_ddp: False
+
+model_info:
+    model_type: GAN              #generative frameworks: AE,MLE,VAE,GAN,Diffusion
+    network_type: PatchTSMixer   #types of neural network: Mixer, MixerTF, PatchTSMixer, MixBeast
+    save_model: True             #save the intermediate models
+    load_file: null              #path and file name of a trained network. 
+    save_file: GAN_TSMixer.pt    #path and file name to save the trained model. 
+                                 #If null, the model is saved in chkeckpoint_dir using the default name
+    gen_param:          
+        gan_model: gan           #'gan' or 'wgan'
+        cr_gan: 1                #use consistency regularization on p-th order moment. '0' means no CR regularization
+        reg_coef: 0              #regularization coefficient for moment regularization
+        reg_model: none          #types of moment regularization: none, moment_diff, or others see regularizer.py
+        g_net_substep: 4         #number of generator steps per one discriminator step
+        prior_distribution: std  #prior distriburion. 'std' is default. 'laplace', 'gamma', 'normal', are available
+        d_net_param:             #parameters for the discriminator network
+            dim_r: [18,16, 8]
+            dim_a: [50,32, 8]
+            dim_v: [45,32,16]
+            dim_c: 4
+            mlp_ratio:  3
+            mlp_layers: 2
+            add_filter: True     # if True, the discriminator uses a log transformation
+    network_param:  #neural network specific parameter
+        dim_r: 18
+        dim_a: 50
+        dim_v: 45
+        dim_c: 4
+    #TSMixer parameters
+        context_length: 810     # dim_v*dim_r
+        patch_length: 45        # dim_v
+        patch_stride: 45        # dim_v
+        num_input_channels: 50  # dim_a
+        expansion_factor: 3
+        num_layers: 2
+        decoder_num_layers: 4
+        dropout: 0.2
+        head_dropout: 0.2
+        #encoder compression
+        d_model_layerwise_scale:      [1, 1]
+        #decoder decompression
+        decoder_d_model_layerwise_scale:      [1,1,1,1]
+        variational: False
+        lower_bound: 0.0
+    #model save/load
+    load_network: False
+    saved_network: None
+
+train_info:
+    optimizer: Adam
+    epochs: 2000
+    learning_rate: 5.e-4
+    batch_size: 128
+    lr_scheduler:
+        scheduler: scheduled #either 'scheduled' or 'on_plateau'
+        milestones: [10,20,40,80,160,320,640]
+        gamma: 0.5
+    save_freq: 20
+    plot_freq: 20
+    plot_config:
+        - [70,  64, 'SiW']
+        - [70, 128, 'SiW']
+        - [70, 256, 'SiW']
+
+data_info:
+    dataloader: 'shower_dataset_small'
+    root_path: '/dccstor/tsfm23/datasets/CERN_Fast_Shower'
+    geo: ["SiW"]
+    angles: [70]
+    energies: [64,128,256]
+    data_split: [0.95,0.03,0.02]   #fractions of train, validation, test sets
+    max_num_events: 100000
+
+scale_info:
+    scale_method: 'lin_trans'
+    scale_param:
+        bias:  0.0
+        scale: 0.2
+    scale_by_energy: True

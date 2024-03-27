@@ -1,0 +1,17 @@
+---
+gpu_info:
+    use_gpu: True
+
+model_info:
+    trained_model: Diff_MixTF.pt
+
+gen_info:
+    gen_loc: generate_Diff_MixTF
+    num_samples: 1000
+    cond_vars:
+        - [70,  64, 'SiW']
+        - [70, 128, 'SiW']
+        - [70, 256, 'SiW']
+
+data_info:
+    dataloader: 'shower_dataset_small'
