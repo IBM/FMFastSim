@@ -40,7 +40,7 @@ class voxel_scaling:
         self.scale_by_energy = scale_by_energy
 
     def transform(self,x_in,e_in=None):
-        if self.scale_by_energy and (e_in != None):
+        if self.scale_by_energy and (e_in is not None):
             x_in = x_in/e_in
         out = self.scale.transform(x_in)
         return out
@@ -50,6 +50,32 @@ class voxel_scaling:
         if self.scale_by_energy and (e_in != None):
             out = out*e_in
         return out
+
+    def transform_energy(self, energy):
+        energy_min = 1 #after division by 1000
+        energy_max = 1000 #after division by 1000
+        energy = np.log10(energy/energy_min)/np.log10(energy_max/energy_min)
+        return energy
+
+    def inverse_transform_energy(self, energy):
+        energy_min = 1 #after division by 1000
+        energy_max = 1000 #after division by 1000
+        energy = energy_min*(energy_max/energy_min)**energy
+        return energy
+
+    #theta from 0.0 to 3.14 -> 0 and 1 (could also use either cos or sin?)
+    def transform_theta(self, theta):
+        theta_min = 1e-8
+        theta_max = np.pi
+        theta = np.log10(theta/theta_min)/np.log10(theta_max/theta_min)
+        return theta
+
+    #phi from -pi to pi -> 0 and 1 (periocity)
+    def transform_phi(self, phi):
+        phi_sin = np.sin(phi)
+        phi_cos = np.cos(phi)
+        phi = np.concatenate((phi_sin, phi_cos), axis=1)
+        return phi
 
 #log_trans => y = mag*log[ (x+bias)/scale ]
 class log_trans:
