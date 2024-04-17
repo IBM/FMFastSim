@@ -1,7 +1,7 @@
 ---
 experiment:
     study_name: Sample_Models
-    run_name:   Diffusion_MixerTrans_2
+    run_name:   Diffusion_with_Transformers
     checkpoint_dir: /data/redacost/cern_fast_shower/chk_point
     validation_dir: /data/redacost/cern_fast_shower/validation
 
@@ -26,18 +26,18 @@ model_info:
             num_steps: 200
             tau: 0.5
     network_param: #neural network specific parameter
-        dim_r: 18
-        dim_a: 50
+        dim_r: 9 
+        dim_a: 16
         dim_v: 45
         dim_c: 32       #For Diffusion model dim_c should be always 2*dim_t_emb
-        dim_r_enc: [18,18,18]
-        dim_a_enc: [50,50,50]
+        dim_r_enc: [9,9,9]
+        dim_a_enc: [16,16,16]
         dim_v_enc: [45,45,45]
-        dim_r_dec: [18,18,18,18,18]
-        dim_a_dec: [50,50,50,50,50]
+        dim_r_dec: [9,9,9,9,9]
+        dim_a_dec: [16,16,16,16,16]
         dim_v_dec: [45,45,45,45,45]
-        num_enc_heads:  [5,5]
-        num_dec_heads:  [5,5,5,5]
+        num_enc_heads:  [3,3]
+        num_dec_heads:  [3,3,3,3]
         mixer_dim:  2
         mlp_ratio:  3
         mlp_layers: 3
@@ -61,18 +61,19 @@ train_info:
     save_freq: 20
     plot_freq: 20
     plot_config:
-        - [70,  64, 'SiW']
-        #- [70, 128, 'SiW']
+        - [70,  50, 'SiW']
+        - [70, 500, 'SiW']
         #- [70, 256, 'SiW']
 
 data_info:
-    dataloader: 'shower_dataset_small'
-    root_path: '/eos/user/r/redacost/FMFastSim/Dataset'
+    dataloader: 'shower_dataset_2_all_cond'
+    root_path: '/data/redacost/eos/eos/geant4/fastSim/ddfastsim/ODD/dataset2_1GeV1TeVPower_theta0p87to2p27_phiFull_noTracker'
+    valid_path: '/data/redacost/eos/eos/geant4/fastSim/ddfastsim/Par04/dataset2_SiW_discrete/'
     geo: ["SiW"]
     angles: [70]
     energies: [64,128,256]
     data_split: [0.95,0.03,0.02]   #fractions of train, validation, test sets
-    max_num_events: 100000
+    max_num_events: 1000000
 
 scale_info:
     scale_method: 'log_trans'  #data transformatin: lin_trans, log_trans, or bi-log_trans

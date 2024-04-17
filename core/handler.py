@@ -438,11 +438,14 @@ class ValidationPlotCallback:
 
     def _setup(self,dataloader):
 
+        #import pdb; pdb.pdb.set_trace()
+
         num_total_events = len(dataloader.data_cond_e)
         if self.max_events != None:
             num_total_events = min(self.max_events,num_total_events)
 
-        energy = dataloader.data_cond_e[:num_total_events]*DataInfo().MAX_ENERGY
+        #energy = dataloader.data_cond_e[:num_total_events]#*DataInfo().MAX_ENERGY
+        energy = dataloader.scale_method.inverse_transform_energy(dataloader.data_cond_e[:num_total_events]).int()
         angle  = dataloader.data_cond_a[:num_total_events]*DataInfo().MAX_ANGLE
         geo    = dataloader.data_cond_g[:num_total_events]
         geo    = np.array(['Scipb' if geo[i,0] == 1 else 'SiW' for i in range(len(geo))])
@@ -454,6 +457,7 @@ class ValidationPlotCallback:
         id_g = geo    == self.val_geometry
 
         idx = id_a & id_e & id_g
+        #idx = id_a & id_g
 
         energy = dataloader.data_energy[:num_total_events]
         cond_e = dataloader.data_cond_e[:num_total_events]
@@ -461,6 +465,8 @@ class ValidationPlotCallback:
         cond_g = dataloader.data_cond_g[:num_total_events]
 
         self.valid_data = dataloader._torch(energy[idx],cond_e[idx],cond_a[idx],cond_g[idx])
+
+        #import pdb; pdb.pdb.set_trace()
 
         #delete previous images
         val_dir = self.handler._val_dir
