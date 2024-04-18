@@ -76,9 +76,10 @@ data_info:
     max_num_events: 1000000
 
 scale_info:
-    scale_method: 'log_trans'  #data transformatin: lin_trans, log_trans, or bi-log_trans
+    scale_method: 'ds2_logit_trans_and_nomalization'  #data transformatin: lin_trans, log_trans, or bi-log_trans, ds2_logit_trans_and_nomalization
     scale_param:
-        mag:   1.0
-        bias:  1.e-5
-        scale: 0.05
+        mean: -12.802077
+        var: 2.076957
+        epsilon_logit: 1.e-6
+        scale_shower: 1.5
     scale_by_energy: True  #scale the data by incident energy
