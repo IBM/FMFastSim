@@ -33,6 +33,8 @@ class voxel_scaling:
             self.scale = lin_trans(**scale_param)
         elif scale_method == 'logit_trans':
             self.scale = logit_trans(**scale_param)
+        elif scale_method == 'ds2_logit_trans_and_nomalization':
+            self.scale = ds2_logit_trans_and_nomalization(**scale_param)
         else:
             print('data is not scaled')
             self.scale = identity()
@@ -47,7 +49,7 @@ class voxel_scaling:
 
     def inverse_transform(self,y_in,e_in=None):
         out = self.scale.inverse_transform(y_in)
-        if self.scale_by_energy and (e_in != None):
+        if self.scale_by_energy and (e_in is not None):
             out = out*e_in
         return out
 
@@ -170,3 +172,32 @@ class identity:
     def inverse_transform(self,y_in):
         return y_in
 
+#original CaloDit shower preprocessing (logit + normalization)
+class ds2_logit_trans_and_nomalization:
+    def __init__(self,mean,var,epsilon_logit=1.e-6,scale_shower=1.5):
+        self.name='ds2_logit_trans_and_nomalization'
+        self.epsilon_logit = epsilon_logit
+        self.mean = mean
+        self.var = var
+        self.scale_shower = scale_shower
+
+    def transform(self,x_in):
+        shower = x_in/(self.scale_shower)
+        new_shower = self.epsilon_logit + (1 - 2 * self.epsilon_logit) * shower #remove 0 and 1
+        shower = np.ma.log(x_in/(1-x_in)).filled(0) #applies logit on the shower, ma is a masked array, if it falls out the validity domain fills the value with 0
+        shower = (shower - self.mean) / self.var
+        return shower
+
+    def inverse_transform(self,z_in):
+        orignial_shower = (z_in * self.var) + self.mean
+        orignial_shower = np.clip(orignial_shower, -88.72, 88.72) #clip values need to cahnge based on precision
+        exp = np.exp(orignial_shower)    
+        x_exp = exp/(1+exp)
+        orignial_shower = (x_exp-self.epsilon_logit)/(1 - 2*self.epsilon_logit)
+        orignial_shower = (orignial_shower * self.scale_shower) * 1000
+
+        # there are negative values because of diffusion?
+        ecut = 1e-8
+        if(ecut > 0): orignial_shower[orignial_shower < ecut ] = 0 #min from samples
+
+        return orignial_shower
