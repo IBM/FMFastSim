@@ -33,23 +33,67 @@ class voxel_scaling:
             self.scale = lin_trans(**scale_param)
         elif scale_method == 'logit_trans':
             self.scale = logit_trans(**scale_param)
+        elif scale_method == 'ds2_logit_trans_and_nomalization':
+            self.scale = ds2_logit_trans_and_nomalization(**scale_param)
         else:
             print('data is not scaled')
             self.scale = identity()
 
         self.scale_by_energy = scale_by_energy
+        self.scale_method = scale_method
 
     def transform(self,x_in,e_in=None):
-        if self.scale_by_energy and (e_in != None):
+        if self.scale_by_energy and (e_in is not None):
             x_in = x_in/e_in
         out = self.scale.transform(x_in)
         return out
 
     def inverse_transform(self,y_in,e_in=None):
         out = self.scale.inverse_transform(y_in)
-        if self.scale_by_energy and (e_in != None):
+        if self.scale_by_energy and (e_in is not None):
             out = out*e_in
         return out
+
+    def transform_energy(self, energy):
+        energy_min = 1 #after division by 1000
+        energy_max = 1000 #after division by 1000
+        energy = np.log10(energy/energy_min)/np.log10(energy_max/energy_min)
+        return energy
+
+    def inverse_transform_energy(self, energy, energy_max=1000):
+        if self.scale_method == 'ds2_logit_trans_and_nomalization':
+            energy_min = 1 #after division by 1000
+            energy_max = energy_max #after division by 1000
+            energy = energy_min*(energy_max/energy_min)**energy
+        else:
+            energy = energy * energy_max
+        return energy
+
+    #theta from 0.0 to 3.14 -> 0 and 1 (could also use either cos or sin?)
+    def transform_theta(self, theta):
+        theta_min = 1e-8
+        theta_max = np.pi
+        theta = np.log10(theta/theta_min)/np.log10(theta_max/theta_min)
+        return theta
+
+    def inverse_transform_theta(self, theta):
+        theta_min = 1e-8 
+        theta_max = np.pi 
+        theta = theta_min*(theta_max/theta_min)**theta
+        return theta
+
+    #phi from -pi to pi -> 0 and 1 (periocity)
+    def transform_phi(self, phi):
+        phi_sin = np.sin(phi)
+        phi_cos = np.cos(phi)
+        phi = np.concatenate((phi_sin, phi_cos), axis=1)
+        return phi
+
+    def inverse_transform_phi(self, phi):
+        phi_from_sin = np.arcsin(phi)
+        phi_from_cos = np.arccos(phi)
+        phi = phi_from_sin 
+        return phi
 
 #log_trans => y = mag*log[ (x+bias)/scale ]
 class log_trans:
@@ -144,3 +188,32 @@ class identity:
     def inverse_transform(self,y_in):
         return y_in
 
+#original CaloDit shower preprocessing (logit + normalization)
+class ds2_logit_trans_and_nomalization:
+    def __init__(self,mean,var,epsilon_logit=1.e-6,scale_shower=1.5):
+        self.name='ds2_logit_trans_and_nomalization'
+        self.epsilon_logit = epsilon_logit
+        self.mean = mean
+        self.var = var
+        self.scale_shower = scale_shower
+
+    def transform(self,x_in):
+        shower = x_in/(self.scale_shower)
+        new_shower = self.epsilon_logit + (1 - 2 * self.epsilon_logit) * shower #remove 0 and 1
+        shower = np.ma.log(x_in/(1-x_in)).filled(0) #applies logit on the shower, ma is a masked array, if it falls out the validity domain fills the value with 0
+        shower = (shower - self.mean) / self.var
+        return shower
+
+    def inverse_transform(self,z_in):
+        orignial_shower = (z_in * self.var) + self.mean
+        orignial_shower = np.clip(orignial_shower, -88.72, 88.72) #clip values need to cahnge based on precision
+        exp = np.exp(orignial_shower)    
+        x_exp = exp/(1+exp)
+        orignial_shower = (x_exp-self.epsilon_logit)/(1 - 2*self.epsilon_logit)
+        orignial_shower = (orignial_shower * self.scale_shower) * 1000
+
+        # there are negative values because of diffusion?
+        ecut = 1e-8
+        if(ecut > 0): orignial_shower[orignial_shower < ecut ] = 0 #min from samples
+
+        return orignial_shower
