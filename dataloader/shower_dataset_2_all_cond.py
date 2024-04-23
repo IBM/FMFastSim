@@ -276,7 +276,7 @@ class Dataset(Dataset):
 
         self.data_energy = torch.from_numpy(energies_data)
         self.data_cond_e = torch.from_numpy(cond_e_data)
-        self.data_cond_a = torch.from_numpy(cond_angle_data)
+        #self.data_cond_a = torch.from_numpy(cond_angle_data)
         self.data_cond_theta = torch.from_numpy(theta_data)
         self.data_cond_phi = torch.from_numpy(phi_data)
         self.data_cond_g = torch.from_numpy(cond_geo_data)
@@ -287,7 +287,7 @@ class Dataset(Dataset):
         if self.use_cond_info:
             return self._torch(self.data_energy[index],
                                self.data_cond_e[index:index+1],
-                               self.data_cond_a[index:index+1],
+                               #self.data_cond_a[index:index+1],
                                self.data_cond_theta[index:index+1],
                                self.data_cond_phi[index:index+1],
                                self.data_cond_g[index]),        \

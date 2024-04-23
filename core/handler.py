@@ -438,14 +438,11 @@ class ValidationPlotCallback:
 
     def _setup(self,dataloader):
 
-        #import pdb; pdb.pdb.set_trace()
-
         num_total_events = len(dataloader.data_cond_e)
         if self.max_events != None:
             num_total_events = min(self.max_events,num_total_events)
 
-        #energy = dataloader.data_cond_e[:num_total_events]#*DataInfo().MAX_ENERGY
-        energy = dataloader.scale_method.inverse_transform_energy(dataloader.data_cond_e[:num_total_events]).int()
+        energy = dataloader.data_cond_e[:num_total_events]*DataInfo().MAX_ENERGY
         angle  = dataloader.data_cond_a[:num_total_events]*DataInfo().MAX_ANGLE
         geo    = dataloader.data_cond_g[:num_total_events]
         geo    = np.array(['Scipb' if geo[i,0] == 1 else 'SiW' for i in range(len(geo))])
@@ -457,7 +454,6 @@ class ValidationPlotCallback:
         id_g = geo    == self.val_geometry
 
         idx = id_a & id_e & id_g
-        #idx = id_a & id_g
 
         energy = dataloader.data_energy[:num_total_events]
         cond_e = dataloader.data_cond_e[:num_total_events]
@@ -465,8 +461,6 @@ class ValidationPlotCallback:
         cond_g = dataloader.data_cond_g[:num_total_events]
 
         self.valid_data = dataloader._torch(energy[idx],cond_e[idx],cond_a[idx],cond_g[idx])
-
-        #import pdb; pdb.pdb.set_trace()
 
         #delete previous images
         val_dir = self.handler._val_dir
@@ -501,6 +495,114 @@ class ValidationPlotCallback:
             val_dir = self.handler._val_dir
 
             compare_profiles(showers,generated_events,self.val_energy,self.val_angle,self.val_geometry,val_dir)
+
+            #observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
+            #    "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
+            #plot_names = [
+            #    f"{VALID_DIR}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Angle_{self.val_angle}"
+            #    for metric in observable_names
+            #]
+            #for file in plot_names:
+            #    wandb.log({file: wandb.Image(f"{file}.png")})
+
+            # 3D shower
+            N_CELLS_R   = DataInfo().N_CELLS_R
+            N_CELLS_PHI = DataInfo().N_CELLS_PHI
+            N_CELLS_Z   = DataInfo().N_CELLS_Z
+            shower = generated_events[0].reshape(N_CELLS_R, N_CELLS_PHI, N_CELLS_Z)
+            r, phi, z, inn = np.stack([x.ravel() for x in np.mgrid[:N_CELLS_R, :N_CELLS_PHI, :N_CELLS_Z]] + [shower.ravel(),], axis=1).T
+            phi = phi / phi.max() * 2 * np.pi
+            x = r * np.cos(phi)
+            y = r * np.sin(phi)
+
+            normalize_intensity_by = 30  # knob for transparency
+            trace = go.Scatter3d(
+                x=x,
+                y=y,
+                z=z,
+                mode='markers',
+                marker_symbol='square',
+                marker_color=[f"rgba(0,0,255,{i*100//normalize_intensity_by/100})" for i in inn],
+            )
+            go.Figure(trace).write_html(f"{val_dir}/3d_shower.html")
+            #wandb.log({'shower_{}_{}'.format(self.val_angle, self.val_energy): wandb.Html(f"{VALID_DIR}/3d_shower.html")})
+
+#PLease use this one for dataset 2
+class ValidationPlotCallback_dataset2:
+    def __init__(self, verbose, handler, theta, phi, energy, geometry, dataloader, max_valid_events=None):
+        self.verbose = verbose
+        self.handler = handler
+        self.val_phi = phi
+        self.val_theta = theta
+        self.val_energy = energy
+        self.val_geometry = geometry
+        self.max_events = max_valid_events
+        self._setup(dataloader)
+
+    def _setup(self,dataloader):
+
+        num_total_events = len(dataloader.data_cond_e)
+        if self.max_events != None:
+            num_total_events = min(self.max_events,num_total_events)
+
+        energy = dataloader.scale_method.inverse_transform_energy(dataloader.data_cond_e[:num_total_events], DataInfo().MAX_ENERGY).int()
+        theta = dataloader.scale_method.inverse_transform_theta(dataloader.data_cond_theta[:num_total_events])
+        phi = dataloader.scale_method.inverse_transform_phi(dataloader.data_cond_phi[:num_total_events])
+        #angle  = dataloader.data_cond_a[:num_total_events]*DataInfo().MAX_ANGLE
+        geo    = dataloader.data_cond_g[:num_total_events]
+        geo    = np.array(['Scipb' if geo[i,0] == 1 else 'SiW' for i in range(len(geo))])
+
+        self.scale_method = dataloader.scale_method
+
+        #id_a = angle  == self.val_angle
+        id_e = energy == self.val_energy
+        id_t = theta == self.val_theta
+        id_p = phi == self.val_phi
+        id_g = geo    == self.val_geometry
+
+        idx = id_a & id_e & id_t & id_p & id_g
+
+        energy = dataloader.data_energy[:num_total_events]
+        cond_e = dataloader.data_cond_e[:num_total_events]
+        cond_phi = dataloader.data_cond_phi[:num_total_events]
+        cond_theta = dataloader.data_cond_theta[:num_total_events]
+        cond_g = dataloader.data_cond_g[:num_total_events]
+
+        self.valid_data = dataloader._torch(energy[idx],cond_e[idx],cond_theta[idx],cond_phi[idx],cond_g[idx])
+
+        #delete previous images
+        val_dir = self.handler._val_dir
+        if os.path.exists(val_dir):
+            files = glob.glob(val_dir+'/*.png')
+            for f in files:
+                os.remove(f)
+
+    def __call__(self, epoch):
+        if ((epoch+1) % self.verbose)==0:
+            print(f'{self.handler._rank}:Plotting..')
+
+            self.handler._set_model_inference()
+            with torch.no_grad():
+                x_in = self.handler._to_dev(self.valid_data)
+                generated_events = self.handler.generate(x_in)
+
+            str_out = f'data max {self.valid_data[0].max().item():.3f} and '
+            str_out+= f'data min {self.valid_data[0].min().item():.3f}'
+            print(str_out,flush=True)
+
+            str_out = f'simulation max {generated_events.max().item():.3f} and '
+            str_out+= f'simulation min {generated_events.min().item():.3f}'
+            print(str_out,flush=True)
+
+            showers          = self.valid_data[0].to('cpu').numpy()
+            generated_events =   generated_events.to('cpu').numpy()
+
+            showers          = self.scale_method.inverse_transform(showers,         self.val_energy)
+            generated_events = self.scale_method.inverse_transform(generated_events,self.val_energy)
+
+            val_dir = self.handler._val_dir
+
+            compare_profiles(showers,generated_events,self.val_energy,self.val_theta, self.val_phi, self.val_geometry,val_dir)
 
             #observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
             #    "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
