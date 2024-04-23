@@ -40,6 +40,7 @@ class voxel_scaling:
             self.scale = identity()
 
         self.scale_by_energy = scale_by_energy
+        self.scale_method = scale_method
 
     def transform(self,x_in,e_in=None):
         if self.scale_by_energy and (e_in is not None):
@@ -59,10 +60,13 @@ class voxel_scaling:
         energy = np.log10(energy/energy_min)/np.log10(energy_max/energy_min)
         return energy
 
-    def inverse_transform_energy(self, energy):
-        energy_min = 1 #after division by 1000
-        energy_max = 1000 #after division by 1000
-        energy = energy_min*(energy_max/energy_min)**energy
+    def inverse_transform_energy(self, energy, energy_max=1000):
+        if self.scale_method == 'ds2_logit_trans_and_nomalization':
+            energy_min = 1 #after division by 1000
+            energy_max = energy_max #after division by 1000
+            energy = energy_min*(energy_max/energy_min)**energy
+        else:
+            energy = energy * energy_max
         return energy
 
     #theta from 0.0 to 3.14 -> 0 and 1 (could also use either cos or sin?)
@@ -72,11 +76,23 @@ class voxel_scaling:
         theta = np.log10(theta/theta_min)/np.log10(theta_max/theta_min)
         return theta
 
+    def inverse_transform_theta(self, theta):
+        theta_min = 1e-8 
+        theta_max = np.pi 
+        theta = theta_min*(theta_max/theta_min)**theta
+        return theta
+
     #phi from -pi to pi -> 0 and 1 (periocity)
     def transform_phi(self, phi):
         phi_sin = np.sin(phi)
         phi_cos = np.cos(phi)
         phi = np.concatenate((phi_sin, phi_cos), axis=1)
+        return phi
+
+    def inverse_transform_phi(self, phi):
+        phi_from_sin = np.arcsin(phi)
+        phi_from_cos = np.arccos(phi)
+        phi = phi_from_sin 
         return phi
 
 #log_trans => y = mag*log[ (x+bias)/scale ]

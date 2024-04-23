@@ -1,9 +1,9 @@
 ---
 experiment:
     study_name: Sample_Models
-    run_name:   Diffusion_MixerTrans_2
-    checkpoint_dir: /data/redacost/cern_fast_shower/chk_point
-    validation_dir: /data/redacost/cern_fast_shower/validation
+    run_name:   Diffusion_MixerTrans
+    checkpoint_dir: /dccstor/kyeo_data/cern_fast_shower/chk_point
+    validation_dir: /dccstor/kyeo_data/cern_fast_shower/validation
 
 gpu_info:
     use_gpu: True
@@ -62,8 +62,8 @@ train_info:
     plot_freq: 20
     plot_config:
         - [70,  64, 'SiW']
-        #- [70, 128, 'SiW']
-        #- [70, 256, 'SiW']
+        - [70, 128, 'SiW']
+        - [70, 256, 'SiW']
 
 data_info:
     dataloader: 'shower_dataset_small'
