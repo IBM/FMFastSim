@@ -67,7 +67,7 @@ train_info:
 
 data_info:
     dataloader: 'shower_dataset_small'
-    root_path: '/eos/user/r/redacost/FMFastSim/Dataset'
+    root_path: '/dccstor/tsfm23/datasets/CERN_Fast_Shower'
     geo: ["SiW"]
     angles: [70]
     energies: [64,128,256]
