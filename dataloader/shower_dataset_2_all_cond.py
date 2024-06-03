@@ -173,7 +173,7 @@ class Dataset(Dataset):
                     num_events = h5_events
                 else:
                     num_events = min(self.max_num_events,h5_events)
-                #print(f'{num_events} number of events in {f_name}')
+                print(f'{num_events} number of events in {f_name}')
 
                 #data split
                 ntrain = int(self.data_split[0]*num_events)
@@ -201,10 +201,10 @@ class Dataset(Dataset):
             local_id1 = local_events[file_idx][1]
             local_num_data = local_id1-local_id0
 
-            #print(f_name)
+            print(f_name)
             #print(start_idx)
             #print(local_id0,local_id1)
-            print(local_num_data)
+            # print(local_num_data)
             angle_particle = 70
             geo = "SiW"
             

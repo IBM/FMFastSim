@@ -75,6 +75,8 @@ def ResolveModel(model_info,**kwargs):
         network = core.MixerTF
     elif network_type=='PatchTSMixer':
         network = core.PatchTSMixer
+    elif network_type=='CaloDiT':
+        network = core.CaloDiT
     else:
         raise ValueError
 
