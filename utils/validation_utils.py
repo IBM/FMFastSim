@@ -24,7 +24,7 @@ import glob
 from utils.observables import LongitudinalProfile, LateralProfile, Energy, PhiProfile
 from utils.plotters import ProfilePlotter, EnergyPlotter
 
-def compare_profiles(e_layer_g4, e_layer_model, particle_energy, particle_angle, geometry, valid_dir, keep_previous=True):
+def compare_profiles(e_layer_g4, e_layer_model, particle_energy, particle_theta, geometry, valid_dir, keep_previous=True, particle_phi=None):
 
     #Check directory
     if not os.path.exists(valid_dir):
@@ -39,30 +39,34 @@ def compare_profiles(e_layer_g4, e_layer_model, particle_energy, particle_angle,
     #1.Longitudinal Profile
     full_sim_long = LongitudinalProfile(_input=e_layer_g4)
     ml_sim_long   = LongitudinalProfile(_input=e_layer_model)
-    longitudinal_profile_plotter = ProfilePlotter(valid_dir, particle_energy, particle_angle, 
-                                                  geometry, full_sim_long, ml_sim_long,_plot_gaussian=False)
+    longitudinal_profile_plotter = ProfilePlotter(valid_dir, particle_energy, particle_theta, 
+                                                  geometry, full_sim_long, ml_sim_long,
+                                                  _particle_phi=particle_phi, _plot_gaussian=False)
     longitudinal_profile_plotter.plot_and_save()
 
     #2.Lateral Profile
     full_sim_lat = LateralProfile(_input=e_layer_g4)
     ml_sim_lat = LateralProfile(_input=e_layer_model)
-    lateral_profile_plotter = ProfilePlotter(valid_dir, particle_energy, particle_angle,
-                                             geometry, full_sim_lat, ml_sim_lat, _plot_gaussian=False)
+    lateral_profile_plotter = ProfilePlotter(valid_dir, particle_energy, particle_theta,
+                                             geometry, full_sim_lat, ml_sim_lat,
+                                             _particle_phi=particle_phi, _plot_gaussian=False)
     lateral_profile_plotter.plot_and_save()
 
     #3.Azimuthal Profile
     full_sim_phi = PhiProfile(_input=e_layer_g4)
     ml_sim_phi = PhiProfile(_input=e_layer_model)
-    phi_profile_plotter = ProfilePlotter(valid_dir, particle_energy, particle_angle,
-                                         geometry, full_sim_phi, ml_sim_phi, _plot_gaussian=False)
+    phi_profile_plotter = ProfilePlotter(valid_dir, particle_energy, particle_theta,
+                                         geometry, full_sim_phi, ml_sim_phi,
+                                         _particle_phi=particle_phi, _plot_gaussian=False)
     phi_profile_plotter.plot_and_save()
 
     #4.Total energy 
     full_sim_energy = Energy(_input=e_layer_g4)
     ml_sim_energy = Energy(_input=e_layer_model)
 
-    energy_plotter = EnergyPlotter(valid_dir, particle_energy, particle_angle, 
-                                   geometry, full_sim_energy, ml_sim_energy)
+    energy_plotter = EnergyPlotter(valid_dir, particle_energy, particle_theta, 
+                                   geometry, full_sim_energy, ml_sim_energy,
+                                   _particle_phi=particle_phi)
     energy_plotter.plot_and_save()
 
     print(flush=True)
