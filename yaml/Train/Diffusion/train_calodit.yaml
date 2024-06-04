@@ -22,7 +22,7 @@ model_info:
         dim_t_emb: 128          #dimension of positional embedding
         dim_c: 6                #dimension of conditioning variables (incl. geo)
         beta_info:              #diffusion scheduler info
-            schedule: cosine
+            schedule: cos
             num_steps: 200
             tau: 1
     network_param: #neural network specific parameter
@@ -50,9 +50,7 @@ train_info:
     save_freq: 20
     plot_freq: 20
     plot_config:
-        - [70,  64, 'SiW']
-        - [70, 128, 'SiW']
-        - [70, 256, 'SiW']
+        - [1.57, 0.0,  500, 'SiW']
 
 data_info:
     dataloader: 'shower_dataset_2_all_cond'
@@ -68,7 +66,7 @@ scale_info:
     scale_method: 'ds2_logit_trans_and_nomalization'  #data transformatin: lin_trans, log_trans, or bi-log_trans, ds2_logit_trans_and_nomalization
     scale_param:
         mean: -12.802077
-        var: 2.076957
+        std: 2.076957
         epsilon_logit: 1.e-6
         scale_shower: 1.5
     scale_by_energy: True  #scale the data by incident energy

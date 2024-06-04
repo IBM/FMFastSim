@@ -58,6 +58,7 @@ class CaloDiT(nn.Module):
         self.embed_dim = embed_dim
         self.num_enc_layers = num_enc_layers
         self.num_dec_layers = num_dec_layers
+        self.patch_size = patch_size
 
         self.variational = variational
 
@@ -85,7 +86,6 @@ class CaloDiT(nn.Module):
 
         self.decoder_input = torch.zeros(1,3)  # recheck
 
-        self.patch_size = patch_size
         self.patch_embedder = PatchEmbed([self.dim_r, self.dim_a, self.dim_v],
                                          self.patch_size, self.embed_dim)
         
@@ -105,8 +105,11 @@ class CaloDiT(nn.Module):
     """
     def encoding(self,x_in,c_in=None,sampling=True):
 
-        patches = self.patch_embedder(x_in) + self.pos_embed
-        z0 = self.encoder(patches,c_in)
+        patches = self.patch_embedder(x_in)
+        z0 = patches + self.pos_embed
+
+        for block in self.encoder:
+            z0 = block(patches,c_in)
 
         if self.variational:
             z_mean = self.exp_net(z0)
@@ -123,8 +126,10 @@ class CaloDiT(nn.Module):
     decoding function takes a latent variable (z_in,c_in) and returns the output variable.
     """
     def decoding(self,z_in,c_in=None):
-        out = self.decoder(z_in,c_in)
-        out = self.final_layer(out)
+        for block in self.decoder:
+            z_in = block(z_in,c_in)
+
+        out = self.final_layer(z_in)
         out = self.unpatchify(out)
         return out
 
