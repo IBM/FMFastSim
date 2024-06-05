@@ -101,7 +101,7 @@ class Dataset(Dataset):
         split="train",
         scale_method = None,
         max_num_events = None,
-        max_local_data = 20000,
+        max_local_data = 100000,
         **kwargs
     ):
         assert split in ["train", "test", "val"]

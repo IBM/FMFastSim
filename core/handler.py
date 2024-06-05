@@ -38,12 +38,10 @@ import core
 
 from dataloader.data_handler import DataInfo
 
-#import wandb
+import wandb
 import plotly.graph_objects as go
 
 from utils.validation_utils import compare_profiles
-
-#WANDB_ENTITY = CONSTANTS.WANDB_ENTITY
 
 def ResolveModel(model_info,**kwargs):
     model_type   = model_info['model_type']
@@ -131,12 +129,13 @@ class ModelHandler:
     _rank: int = 0
     _device: torch.device = torch.device('cpu')
     _setup_dir: bool = True
+    _wandb_entity: str = None
 
     def __post_init__(self) -> None:
         # Setup Wandb.
         if self._log_to_wandb:
-            print("WANDB is not set up in CCC")
-            #self._setup_wandb()
+            print("WANDB is running..")
+            self._setup_wandb()
 
         if self._device != torch.device('cpu'):
             self._device = torch.device(self._device)
@@ -169,19 +168,12 @@ class ModelHandler:
         if self._ddp:
             distributed.barrier()
 
-    #def _setup_wandb(self) -> None:
-    #    config = {
-    #        "learning_rate": self._learning_rate,
-    #        "batch_size": self._batch_size,
-    #        "epochs": self._epochs,
-    #        "optimizer_type": str(self._optimizer_type)
-    #    }
+    def _setup_wandb(self) -> None:
+       config = {}
     #    # Add model specific config
     #    config.update(self._get_wandb_extra_config())
-    #    # Reinit flag is needed for hyperparameter tuning. Whenever new training is started, new Wandb run should be created.
-    #    wandb.init(name=self._wandb_run_name, project=self._wandb_project_name, entity=WANDB_ENTITY, reinit=True, config=config)
-    #    # Upload constants.py
-    #    wandb.save("./core/constants.py")
+       # Reinit flag is needed for hyperparameter tuning. Whenever new training is started, new Wandb run should be created.
+       wandb.init(name=self._run_name, project=self._project_name, entity=self._wandb_entity, reinit=True, config=config)
 
     #def _get_wandb_extra_config(self):
     #    raise NotImplementedError
@@ -272,7 +264,7 @@ class ModelHandler:
         else:
             raise ValueError
 
-        #wandb.watch(self._model, log_freq=100, log='all')
+        wandb.watch(self._model, log_freq=100, log='all')
 
         if 'max_valid_events' in train_info:
             max_valid_events = train_info['max_valid_events']
@@ -348,14 +340,12 @@ class ModelHandler:
             if self._rank == 0:
                 print("Epoch {}:\tTrainLoss: {} \tValidLoss: {}, \tTime: {:.2f}sec.".format(epoch + 1, train_loss, val_loss, epoch_time),flush=True)
 
-            '''
             # WandB logs
             wandb.log({
                 'train_loss': train_loss,
                 'val_loss': val_loss,
                 'epoch': epoch
             })
-            '''
 
             # Save model if improvement
             if epoch%10 == 0:
@@ -507,14 +497,14 @@ class ValidationPlotCallback:
 
             compare_profiles(showers,generated_events,self.val_energy,self.val_angle,self.val_geometry,val_dir)
 
-            #observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
-            #    "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
-            #plot_names = [
-            #    f"{VALID_DIR}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Angle_{self.val_angle}"
-            #    for metric in observable_names
-            #]
-            #for file in plot_names:
-            #    wandb.log({file: wandb.Image(f"{file}.png")})
+            observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
+               "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
+            plot_names = [
+               f"{val_dir}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Angle_{self.val_angle}"
+               for metric in observable_names
+            ]
+            for file in plot_names:
+               wandb.log({file: wandb.Image(f"{file}.png")})
 
             # 3D shower
             N_CELLS_R   = DataInfo().N_CELLS_R
@@ -536,7 +526,7 @@ class ValidationPlotCallback:
                 marker_color=[f"rgba(0,0,255,{i*100//normalize_intensity_by/100})" for i in inn],
             )
             go.Figure(trace).write_html(f"{val_dir}/3d_shower.html")
-            #wandb.log({'shower_{}_{}'.format(self.val_angle, self.val_energy): wandb.Html(f"{VALID_DIR}/3d_shower.html")})
+            wandb.log({'shower_{}_{}'.format(self.val_angle, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
 
 #PLease use this one for dataset 2
 class ValidationPlotCallbackDiscrete:
@@ -620,14 +610,14 @@ class ValidationPlotCallbackDiscrete:
             compare_profiles(showers,generated_events,self.val_energy,self.val_theta,
                              self.val_geometry,val_dir,particle_phi=self.val_phi)
 
-            # observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
-            #    "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
-            # plot_names = [
-            #    f"{val_dir}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Theta_{self.val_theta}_Phi_{self.val_phi}"
-            #    for metric in observable_names
-            # ]
-            # for file in plot_names:
-            #    wandb.log({file: wandb.Image(f"{file}.png")})
+            observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
+               "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
+            plot_names = [
+               f"{val_dir}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Theta_{self.val_theta}_Phi_{self.val_phi}"
+               for metric in observable_names
+            ]
+            for file in plot_names:
+               wandb.log({file: wandb.Image(f"{file}.png")})
 
             # 3D shower
             N_CELLS_R   = DataInfo().N_CELLS_R
@@ -649,4 +639,4 @@ class ValidationPlotCallbackDiscrete:
                 marker_color=[f"rgba(0,0,255,{i*100//normalize_intensity_by/100})" for i in inn],
             )
             go.Figure(trace).write_html(f"{val_dir}/3d_shower.html")
-            # wandb.log({'shower_{}_{}'.format(self.val_theta, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
+            wandb.log({'shower_{}_{}'.format(self.val_theta, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
