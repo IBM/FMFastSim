@@ -115,13 +115,13 @@ class Diffusion(nn.Module):
         return x_out
 
     def prepare_input(self,X,return_cond=False):
-        (x_input, e_input, angle_input, geo_input) = X
+        x_input, conditions = X[0], list(X[1:])
 
-        if e_input.dim() == 1:
-            e_input     = e_input    .unsqueeze(1)
-            angle_input = angle_input.unsqueeze(1)
+        for i in range(len(conditions)):
+            if conditions[i].dim() == 1:
+                conditions[i] = conditions[i].unsqueeze(1)
 
-        cond_var = torch.cat([e_input,angle_input,geo_input],dim=1)
+        cond_var = torch.cat(conditions,dim=1)
 
         if return_cond:
             return cond_var
@@ -238,8 +238,8 @@ def sigmoid_schedule(num_steps,start=-3,end=3,tau=1):
 def cosine_schedule(num_steps,start=0,end=1,tau=1):
     t = torch.arange(0,1+1.e-6,step=1/(num_steps+1),dtype=torch.double)
 
-    x = ((t*(end-start)+start)*np.pi/2-1.e-6).cos().abs().pow(2*tau)
-    y = ((t*(end-start)+start)*np.pi/2-1.e-6).cos()
+    x = ((t*(end-start)+start)*math.pi/2-1.e-6).cos().abs().pow(2*tau)
+    y = ((t*(end-start)+start)*math.pi/2-1.e-6).cos()
 
     gamma = (x-x[-1])/(x[0]-x[-1])
     gamma = gamma[:-1] #remove the last knot

@@ -41,13 +41,13 @@ class Plotter:
     Attributes:
         _save_dir: directory to save the figures
         _particle_energy: An integer which is energy of the primary particle in GeV units.
-        _particle_angle: An integer which is an angle of the primary particle in degrees.
+        _particle_theta: An integer which is an angle of the primary particle in degrees.
         _geometry: A string which is a name of the calorimeter geometry (e.g. SiW, SciPb).
 
     """
     _save_dir: str
-    _particle_energy: int
-    _particle_angle: int
+    _particle_energy: float
+    _particle_theta: float
     _geometry: str
 
     def plot_and_save(self):
@@ -133,6 +133,7 @@ class ProfilePlotter(Plotter):
     _full_simulation: Profile
     _ml_simulation: Profile
     _plot_gaussian: bool = False
+    _particle_phi: float = None
 
     def __post_init__(self):
         # Check if profiles are either both longitudinal or lateral.
@@ -257,7 +258,7 @@ class ProfilePlotter(Plotter):
         axes[0].set_xlabel(xlabel)
         axes[0].set_ylabel("Energy [Mev]")
         axes[0].set_title(
-            f" $e^-$, {self._particle_energy} [GeV], {self._particle_angle}$^{{\circ}}$, {self._geometry}"
+            f" $e^-$, {self._particle_energy} [GeV], {self._particle_theta}$^{{\circ}}$, {self._geometry}"
         )
 
         # Calculate ratios.
@@ -273,7 +274,8 @@ class ProfilePlotter(Plotter):
         axes[1].axhline(y=1, color="black")
         plt.savefig(
             f"{self._save_dir}/{observable_name}_Geo_{self._geometry}_E_{self._particle_energy}_"
-            + f"Angle_{self._particle_angle}.png")
+            + (f"Angle_{self._particle_theta}.png" if self._particle_phi is None
+                else f"Theta_{self._particle_theta}_Phi_{self._particle_phi}.png"))
         plt.clf()
 
     def _plot_profile(self) -> None:
@@ -387,6 +389,7 @@ class EnergyPlotter(Plotter):
     """
     _full_simulation: Energy
     _ml_simulation: Energy
+    _particle_phi: float = None
 
     def _plot_total_energy(self, y_log_scale=True) -> None:
         """ Plots and saves a histogram with total energy detected in an event.
@@ -424,10 +427,13 @@ class EnergyPlotter(Plotter):
         plt.xlabel("Energy [MeV]")
         plt.ylabel("# events")
         plt.title(
-            f" $e^-$, {self._particle_energy} [GeV], {self._particle_angle}$^{{\circ}}$, {self._geometry} "
+            f" $e^-$, {self._particle_energy} [GeV], {self._geometry}, {self._particle_theta} "
+            + ("" if self._particle_phi is None else f", {self._particle_phi}")
         )
         plt.savefig(
-            f"{self._save_dir}/E_tot_Geo_{self._geometry}_E_{self._particle_energy}_Angle_{self._particle_angle}.png"
+            f"{self._save_dir}/E_tot_Geo_{self._geometry}_E_{self._particle_energy}_"
+            + (f"Angle_{self._particle_theta}.png" if self._particle_phi is None
+                else f"Theta_{self._particle_theta}_Phi_{self._particle_phi}.png")
         )
         plt.clf()
 
@@ -456,7 +462,7 @@ class EnergyPlotter(Plotter):
         log_ml_simulation_cell_energy = log_ml_simulation_cell_energy[log_ml_simulation_cell_energy!=0]
 
         plt.figure(figsize=(12, 8))
-        bins = np.linspace(-4, 2, 1000)
+        bins = np.linspace(-3, 4, 1000)
         plt.hist(x=log_full_simulation_cell_energy,
                  bins=bins,
                  histtype=HISTOGRAM_TYPE,
@@ -473,12 +479,15 @@ class EnergyPlotter(Plotter):
         plt.ylim(bottom=1)
         plt.ylabel("# entries")
         plt.title(
-            f" $e^-$, {self._particle_energy} [GeV], {self._particle_angle}$^{{\circ}}$, {self._geometry} "
+            f" $e^-$, {self._particle_energy} [GeV], {self._geometry}, {self._particle_theta} "
+            + ("" if self._particle_phi is None else f", {self._particle_phi}")
         )
         plt.grid(True)
         plt.legend(loc="upper left")
         plt.savefig(
-            f"{self._save_dir}/E_cell_Geo_{self._geometry}_E_{self._particle_energy}_Angle_{self._particle_angle}.png"
+            f"{self._save_dir}/E_cell_Geo_{self._geometry}_E_{self._particle_energy}_"
+            + (f"Angle_{self._particle_theta}.png" if self._particle_phi is None
+                else f"Theta_{self._particle_theta}_Phi_{self._particle_phi}.png")
         )
         plt.clf()
 
@@ -494,7 +503,7 @@ class EnergyPlotter(Plotter):
         ml_simulation_cell_energy = self._ml_simulation.calc_cell_energy()
 
         plt.figure(figsize=(12, 8))
-        bins = np.linspace(1e-2, 60, 1000)
+        bins = np.linspace(1e-2, 4000, 1000)
         plt.hist(x=full_simulation_cell_energy,
                  bins=bins,
                  histtype=HISTOGRAM_TYPE,
@@ -511,17 +520,20 @@ class EnergyPlotter(Plotter):
         plt.ylim(bottom=1)
         plt.ylabel("# entries")
         plt.title(
-            f" $e^-$, {self._particle_energy} [GeV], {self._particle_angle}$^{{\circ}}$, {self._geometry} "
+            f" $e^-$, {self._particle_energy} [GeV], {self._geometry}, {self._particle_theta} "
+            + ("" if self._particle_phi is None else f", {self._particle_phi}")
         )
         plt.grid(True)
         plt.legend(loc="upper right")
         plt.savefig(
-            f"{self._save_dir}/E_cell_non_log_Geo_{self._geometry}_E_{self._particle_energy}_Angle_{self._particle_angle}.png"
-        )
+            f"{self._save_dir}/E_cell_non_log_Geo_{self._geometry}_E_{self._particle_energy}_"
+            + (f"Angle_{self._particle_theta}.png" if self._particle_phi is None
+                else f"Theta_{self._particle_theta}_Phi_{self._particle_phi}.png"))
         plt.xscale("log")
         plt.savefig(
-            f"{self._save_dir}/E_cell_non_log_xlog_Geo_{self._geometry}_E_{self._particle_energy}_Angle_{self._particle_angle}.png"
-        )
+            f"{self._save_dir}/E_cell_non_log_xlog_Geo_{self._geometry}_E_{self._particle_energy}_"
+            + (f"Angle_{self._particle_theta}.png" if self._particle_phi is None
+                else f"Theta_{self._particle_theta}_Phi_{self._particle_phi}.png"))
         plt.clf()
 
     def _plot_zero_voxels(self) -> None:
@@ -548,13 +560,15 @@ class EnergyPlotter(Plotter):
         # plt.yscale("log")
         plt.ylabel("# Zeroes")
         plt.title(
-            f" $e^-$, {self._particle_energy} [GeV], {self._particle_angle}$^{{\circ}}$, {self._geometry} "
+            f" $e^-$, {self._particle_energy} [GeV], {self._geometry}, {self._particle_theta} "
+            + ("" if self._particle_phi is None else f", {self._particle_phi}")
         )
         plt.grid(True)
         plt.legend(loc="upper right")
         plt.savefig(
-            f"{self._save_dir}/Radial_num_zeroes_Geo_{self._geometry}_E_{self._particle_energy}_Angle_{self._particle_angle}.png"
-        )
+            f"{self._save_dir}/Radial_num_zeroes_Geo_{self._geometry}_E_{self._particle_energy}_"
+            + (f"Angle_{self._particle_theta}.png" if self._particle_phi is None
+                else f"Theta_{self._particle_theta}_Phi_{self._particle_phi}.png"))
         plt.clf()
 
     def _plot_energy_per_layer(self):
@@ -603,7 +617,8 @@ class EnergyPlotter(Plotter):
         fig.supxlabel("Energy [MeV]", fontsize=14)
         fig.supylabel("# entries", fontsize=14)
         fig.suptitle(
-            f" $e^-$, {self._particle_energy} [GeV], {self._particle_angle}$^{{\circ}}$, {self._geometry} "
+            f" $e^-$, {self._particle_energy} [GeV], {self._geometry}, {self._particle_theta} "
+            + ("" if self._particle_phi is None else f", {self._particle_phi}")
         )
 
         # Take legend from one plot and make it a global legend.
@@ -611,8 +626,9 @@ class EnergyPlotter(Plotter):
         fig.legend(handles, labels, bbox_to_anchor=(1.15, 0.5))
 
         plt.savefig(
-            f"{self._save_dir}/E_layer_Geo_{self._geometry}_E_{self._particle_energy}_Angle_{self._particle_angle}.png",
-            bbox_inches="tight")
+            f"{self._save_dir}/E_layer_Geo_{self._geometry}_E_{self._particle_energy}_"
+            + (f"Angle_{self._particle_theta}.png" if self._particle_phi is None
+                else f"Theta_{self._particle_theta}_Phi_{self._particle_phi}.png"), bbox_inches="tight")
         plt.clf()
 
     def plot_and_save(self):

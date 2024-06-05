@@ -146,13 +146,13 @@ class GAN(nn.Module):
 
 
     def prepare_input(self,X,return_cond=False):
-        (x_input, e_input, angle_input, geo_input) = X
+        x_input, conditions = X[0], list(X[1:])
 
-        if e_input.dim() == 1:
-            e_input     = e_input    .unsqueeze(1)
-            angle_input = angle_input.unsqueeze(1)
+        for i in range(len(conditions)):
+            if conditions[i].dim() == 1:
+                conditions[i]     = conditions[i].unsqueeze(1)
 
-        cond_var = torch.cat([e_input,angle_input,geo_input],dim=1)
+        cond_var = torch.cat(conditions,dim=1)
 
         if return_cond:
             return cond_var
