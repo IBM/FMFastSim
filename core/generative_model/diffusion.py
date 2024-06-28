@@ -57,8 +57,10 @@ class Diffusion(nn.Module):
         self.register_buffer('alpha',alpha.float())
         self.register_buffer('beta' ,beta .float())
         self.register_buffer('gamma',gamma.float())
-        self.register_buffer('sigma',beta.sqrt().float())
-        self.sigma[0] = 0.0
+        
+        sigma = torch.zeros_like(beta)
+        sigma[1:] = beta[1:]*(1-gamma[:-1])/(1-gamma[1:])
+        self.register_buffer('sigma',sigma.sqrt().float())
 
         self.register_buffer('sqrt_one_minus_gamma',(1-gamma).sqrt().float())
         self.register_buffer('sqrt_gamma'          ,   gamma .sqrt().float())
@@ -80,8 +82,8 @@ class Diffusion(nn.Module):
         dim_t = dim_t_emb
         self.time_emb = Position_Embeddings(dim_t)
         self.cond_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                      nn.Linear(128  ,128),nn.SiLU(),
-                                      nn.Linear(128  ,dim_t))
+                                      nn.Linear(128  , 64),nn.SiLU(),nn.LayerNorm(64),
+                                      nn.Linear(64   ,dim_t))
 
         self.loss_counter = -1
 
@@ -101,7 +103,6 @@ class Diffusion(nn.Module):
 
 
     def forward(self, x_in, c_in, t_in):
-
         c0 = self.cond_emb(c_in)
         t0 = self.time_emb(t_in)
 
@@ -115,13 +116,15 @@ class Diffusion(nn.Module):
         return x_out
 
     def prepare_input(self,X,return_cond=False):
-        (x_input, e_input, angle_input, geo_input) = X
+        x_input = X[0]
 
-        if e_input.dim() == 1:
-            e_input     = e_input    .unsqueeze(1)
-            angle_input = angle_input.unsqueeze(1)
-
-        cond_var = torch.cat([e_input,angle_input,geo_input],dim=1)
+        C = []
+        for i in range(1,len(X)):
+            if X[i].dim() == 1:
+                C += [X[i].unsqueeze(1)]
+            else:
+                C += [X[i]]
+        cond_var = torch.cat(C,dim=1)
 
         if return_cond:
             return cond_var
@@ -238,8 +241,8 @@ def sigmoid_schedule(num_steps,start=-3,end=3,tau=1):
 def cosine_schedule(num_steps,start=0,end=1,tau=1):
     t = torch.arange(0,1+1.e-6,step=1/(num_steps+1),dtype=torch.double)
 
-    x = ((t*(end-start)+start)*np.pi/2-1.e-6).cos().abs().pow(2*tau)
-    y = ((t*(end-start)+start)*np.pi/2-1.e-6).cos()
+    r = start/end
+    x = ((t*(1-r)+r)*math.pi/2-1.e-6).cos().pow(2*tau)
 
     gamma = (x-x[-1])/(x[0]-x[-1])
     gamma = gamma[:-1] #remove the last knot

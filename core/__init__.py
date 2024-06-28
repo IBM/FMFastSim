@@ -9,3 +9,4 @@ from core.generative_model.diffusion import DiffusionHandler
 from core.layers.Mixer import Mixer
 from core.layers.MixerTF import MixerTF
 from core.layers.hf_PatchTSMixer import PatchTSMixer
+from core.layers.hf_TSMixBeast import TSMixBeast

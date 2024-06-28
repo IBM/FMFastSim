@@ -456,7 +456,8 @@ class EnergyPlotter(Plotter):
         log_ml_simulation_cell_energy = log_ml_simulation_cell_energy[log_ml_simulation_cell_energy!=0]
 
         plt.figure(figsize=(12, 8))
-        bins = np.linspace(-4, 2, 1000)
+        #bins = np.linspace(-4, 2, 1000)
+        bins = np.linspace(-4, 4, 1000)
         plt.hist(x=log_full_simulation_cell_energy,
                  bins=bins,
                  histtype=HISTOGRAM_TYPE,
@@ -494,7 +495,8 @@ class EnergyPlotter(Plotter):
         ml_simulation_cell_energy = self._ml_simulation.calc_cell_energy()
 
         plt.figure(figsize=(12, 8))
-        bins = np.linspace(1e-2, 60, 1000)
+        #bins = np.linspace(1e-2, 60, 1000)
+        bins = np.linspace(1e-2, 500, 1000)
         plt.hist(x=full_simulation_cell_energy,
                  bins=bins,
                  histtype=HISTOGRAM_TYPE,

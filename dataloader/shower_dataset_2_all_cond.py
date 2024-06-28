@@ -289,7 +289,7 @@ class Dataset(Dataset):
                                self.data_cond_e[index:index+1],
                                #self.data_cond_a[index:index+1],
                                self.data_cond_theta[index:index+1],
-                               self.data_cond_phi[index:index+1],
+                               self.data_cond_phi[index],
                                self.data_cond_g[index]),        \
                    self._torch(self.data_energy[index])[0]
         else:

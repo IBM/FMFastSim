@@ -75,6 +75,8 @@ def ResolveModel(model_info,**kwargs):
         network = core.MixerTF
     elif network_type=='PatchTSMixer':
         network = core.PatchTSMixer
+    elif network_type=='MixBeast':
+        network = core.TSMixBeast
     else:
         raise ValueError
 
@@ -280,10 +282,11 @@ class ModelHandler:
         cnt = 0
         num_proc = max(1,self._num_gpu)
         shower_observables_callbacks = []
-        for _angle, _energy, _geo in train_info['plot_config']:
+        #for _angle, _energy, _geo in train_info['plot_config']:
+        for _phi, _theta, _energy, _geo in train_info['plot_config']:
             if cnt%num_proc == self._rank:
                 shower_observables_callbacks.append(
-                    ValidationPlotCallback(train_info['plot_freq'], self, _angle, _energy, _geo, valid_data, max_valid_events)
+                    ValidationPlotCallback_dataset2(train_info['plot_freq'], self, theta=_theta, phi=_phi, energy= _energy, geometry=_geo, dataloader=valid_data, max_valid_events=max_valid_events)
                 )
             cnt += 1
 
@@ -529,7 +532,7 @@ class ValidationPlotCallback:
 
 #PLease use this one for dataset 2
 class ValidationPlotCallback_dataset2:
-    def __init__(self, verbose, handler, theta, phi, energy, geometry, dataloader, max_valid_events=None):
+    def __init__(self, verbose, handler, theta=None, phi=None, energy=None, geometry=None, dataloader=None, max_valid_events=None):
         self.verbose = verbose
         self.handler = handler
         self.val_phi = phi
@@ -547,7 +550,7 @@ class ValidationPlotCallback_dataset2:
 
         energy = dataloader.scale_method.inverse_transform_energy(dataloader.data_cond_e[:num_total_events], DataInfo().MAX_ENERGY).int()
         theta = dataloader.scale_method.inverse_transform_theta(dataloader.data_cond_theta[:num_total_events])
-        phi = dataloader.scale_method.inverse_transform_phi(dataloader.data_cond_phi[:num_total_events])
+        phi = dataloader.scale_method.inverse_transform_phi(dataloader.data_cond_phi[:num_total_events])[:,0]
         #angle  = dataloader.data_cond_a[:num_total_events]*DataInfo().MAX_ANGLE
         geo    = dataloader.data_cond_g[:num_total_events]
         geo    = np.array(['Scipb' if geo[i,0] == 1 else 'SiW' for i in range(len(geo))])
@@ -556,11 +559,12 @@ class ValidationPlotCallback_dataset2:
 
         #id_a = angle  == self.val_angle
         id_e = energy == self.val_energy
-        id_t = theta == self.val_theta
-        id_p = phi == self.val_phi
+        id_t = (theta-self.val_theta).abs() < 1.e-3
+        id_p = (phi  -self.val_phi  ).abs() < 1.e-3
         id_g = geo    == self.val_geometry
 
-        idx = id_a & id_e & id_t & id_p & id_g
+        #idx = id_a & id_e & id_t & id_p & id_g
+        idx = id_e & id_t & id_p & id_g
 
         energy = dataloader.data_energy[:num_total_events]
         cond_e = dataloader.data_cond_e[:num_total_events]
@@ -602,7 +606,8 @@ class ValidationPlotCallback_dataset2:
 
             val_dir = self.handler._val_dir
 
-            compare_profiles(showers,generated_events,self.val_energy,self.val_theta, self.val_phi, self.val_geometry,val_dir)
+            #compare_profiles(showers,generated_events,self.val_energy,self.val_theta, self.val_phi, self.val_geometry,val_dir)
+            compare_profiles(showers,generated_events,self.val_energy,self.val_theta, self.val_geometry,val_dir)
 
             #observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
             #    "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]

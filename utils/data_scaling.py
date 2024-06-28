@@ -61,12 +61,9 @@ class voxel_scaling:
         return energy
 
     def inverse_transform_energy(self, energy, energy_max=1000):
-        if self.scale_method == 'ds2_logit_trans_and_nomalization':
-            energy_min = 1 #after division by 1000
-            energy_max = energy_max #after division by 1000
-            energy = energy_min*(energy_max/energy_min)**energy
-        else:
-            energy = energy * energy_max
+        energy_min = 1 #after division by 1000
+        energy_max = energy_max #after division by 1000
+        energy = energy_min*(energy_max/energy_min)**energy
         return energy
 
     #theta from 0.0 to 3.14 -> 0 and 1 (could also use either cos or sin?)
