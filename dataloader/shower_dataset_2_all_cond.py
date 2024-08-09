@@ -57,9 +57,9 @@ CONSTANTS.SIZE_Z = 3.4
 CONSTANTS.R_HIGH = 8 #None  # [0, 17]
 CONSTANTS.Z_LOW = None  # [0, 44]
 CONSTANTS.Z_HIGH = 44 # None  # [0, 44]
-if CONSTANTS.R_HIGH is None: CONSTANTS.R_HIGH = 17
+if CONSTANTS.R_HIGH is None: CONSTANTS.R_HIGH = ORG_N_CELLS_R - 1
 if CONSTANTS.Z_LOW is None: CONSTANTS.Z_LOW = 0
-if CONSTANTS.Z_HIGH is None: CONSTANTS.Z_HIGH = 44
+if CONSTANTS.Z_HIGH is None: CONSTANTS.Z_HIGH = ORG_N_CELLS_Z - 1
 assert CONSTANTS.R_HIGH < CONSTANTS.ORG_N_CELLS_R
 assert (CONSTANTS.Z_HIGH - CONSTANTS.Z_LOW) < CONSTANTS.ORG_N_CELLS_Z
 CONSTANTS.N_CELLS_R = CONSTANTS.R_HIGH + 1
@@ -97,13 +97,11 @@ class Dataset(Dataset):
         root_path    = '.',
         valid_path   = None,
         geo          = ['SiW'],
-        angles       = [70],
-        energies     = [64,128,256],
         use_cond_info= True,
         split="train",
         scale_method = None,
         max_num_events = None,
-        max_local_data = 20000,
+        max_local_data = 100000,
         **kwargs
     ):
         assert split in ["train", "test", "val"]
@@ -121,13 +119,9 @@ class Dataset(Dataset):
 
 
         self.geo      = geo
-        self.angles   = angles
-        self.energies = energies
 
         self.use_cond_info = use_cond_info
-
         self.scale_method = scale_method
-
         self.max_num_events = max_num_events
         self.max_local_data = max_local_data
     
@@ -138,17 +132,7 @@ class Dataset(Dataset):
         cond_e_data = []
         cond_phi_train = []
         cond_theta_train = []
-        # currently not in use
-        cond_angle_data = []
         cond_geo_data = []
-
-        if max(self.energies) > MAX_ENERGY:
-            print('Warning: maximum energy in the data is larger than MAX_ENERGY')
-            print(f'data max: {max(self.energies)} v.s. MAX_ENERGY {MAX_ENERGY}')
-
-        if max(self.angles) > MAX_ANGLE:
-            print('Warning: maximum angle in the data is larger than MAX_ANGLE')
-            print(f'data max: {max(self.angle)} v.s. MAX_ENERGY {MAX_ANGLE}')
             
         max_local_data = self.max_local_data
 
@@ -173,7 +157,7 @@ class Dataset(Dataset):
                     num_events = h5_events
                 else:
                     num_events = min(self.max_num_events,h5_events)
-                #print(f'{num_events} number of events in {f_name}')
+                print(f'{num_events} number of events in {f_name}')
 
                 #data split
                 ntrain = int(self.data_split[0]*num_events)
@@ -201,10 +185,10 @@ class Dataset(Dataset):
             local_id1 = local_events[file_idx][1]
             local_num_data = local_id1-local_id0
 
-            #print(f_name)
+            print(f_name)
             #print(start_idx)
             #print(local_id0,local_id1)
-            print(local_num_data)
+            # print(local_num_data)
             angle_particle = 70
             geo = "SiW"
             
@@ -258,25 +242,16 @@ class Dataset(Dataset):
                     
             #print('data retrieval time:',time.time()-t0)
 
-
-            # Bring the conditions b/w [0,1]
-            # cond_e_data    .append([energy_particle / MAX_ENERGY] * local_num_data)
-            cond_angle_data.append([angle_particle  / MAX_ANGLE ] * local_num_data)
-
             # build the geometry condition vector (1 hot encoding vector)
             if geo == "SiW":
                 cond_geo_data.append([[0, 1]] * local_num_data)
             if geo == "SciPb":
                 cond_geo_data.append([[1, 0]] * local_num_data)
 
-        # return numpy arrays
-        # cond_e_data     = np.concatenate(cond_e_data)
-        cond_angle_data = np.concatenate(cond_angle_data)
         cond_geo_data   = np.concatenate(cond_geo_data)
 
         self.data_energy = torch.from_numpy(energies_data)
         self.data_cond_e = torch.from_numpy(cond_e_data)
-        #self.data_cond_a = torch.from_numpy(cond_angle_data)
         self.data_cond_theta = torch.from_numpy(theta_data)
         self.data_cond_phi = torch.from_numpy(phi_data)
         self.data_cond_g = torch.from_numpy(cond_geo_data)
@@ -287,7 +262,6 @@ class Dataset(Dataset):
         if self.use_cond_info:
             return self._torch(self.data_energy[index],
                                self.data_cond_e[index:index+1],
-                               #self.data_cond_a[index:index+1],
                                self.data_cond_theta[index:index+1],
                                self.data_cond_phi[index],
                                self.data_cond_g[index]),        \
@@ -319,7 +293,7 @@ class Dataset(Dataset):
         local_energy_particle = local_energy_particle.reshape(-1,1)
         local_theta = local_theta.reshape(-1,1)
         local_phi = local_phi.reshape(-1,1)
-        
+
         # preprocess
         local_energy = self.scale_method.transform(local_energy,local_energy_particle)
         local_energy_particle = self.scale_method.transform_energy(local_energy_particle)
