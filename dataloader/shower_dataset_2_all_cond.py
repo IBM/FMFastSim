@@ -330,5 +330,5 @@ class Dataset(Dataset):
         local_energy = local_energy.reshape(-1,N_CELLS_R,N_CELLS_PHI,N_CELLS_Z)
         local_energy_particle = local_energy_particle.reshape(-1)
         local_theta = local_theta.reshape(-1)
-        
+
         return local_energy, local_energy_particle, local_theta, local_phi

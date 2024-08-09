@@ -196,16 +196,17 @@ class ds2_logit_trans_and_nomalization:
 
     def transform(self,x_in):
         shower = x_in/(self.scale_shower)
-        new_shower = self.epsilon_logit + (1 - 2 * self.epsilon_logit) * shower #remove 0 and 1
-        shower = np.ma.log(x_in/(1-x_in)).filled(0) #applies logit on the shower, ma is a masked array, if it falls out the validity domain fills the value with 0
+        shower = self.epsilon_logit + (1 - 2 * self.epsilon_logit) * shower #remove 0 and 1
+        #shower = np.ma.log(shower/(1-shower)).filled(0) #applies logit on the shower, ma is a masked array, if it falls out the validity domain fills the value with 0
+        shower = np.log(shower/(1-shower))
         shower = (shower - self.mean) / self.var
         return shower
 
     def inverse_transform(self,z_in):
-        orignial_shower = (z_in * self.var) + self.mean
-        orignial_shower = np.clip(orignial_shower, -88.72, 88.72) #clip values need to cahnge based on precision
-        exp = np.exp(orignial_shower)    
-        x_exp = exp/(1+exp)
+        z_in = (z_in * self.var) + self.mean
+        z_in = np.clip(z_in, -88.72, 88.72) #clip values need to change based on precision
+        z_exp = np.exp(z_in)
+        x_exp = z_exp/(1+z_exp)
         orignial_shower = (x_exp-self.epsilon_logit)/(1 - 2*self.epsilon_logit)
         orignial_shower = (orignial_shower * self.scale_shower) * 1000
 

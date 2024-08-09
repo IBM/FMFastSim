@@ -61,9 +61,8 @@ train_info:
     save_freq: 20
     plot_freq: 20
     plot_config:
-        - [70,  50, 'SiW']
-        - [70, 500, 'SiW']
-        #- [70, 256, 'SiW']
+        - [0, 1.57,  50, 'SiW']  #phi, theta, energy, geo
+        - [0, 1.57, 500, 'SiW']
 
 data_info:
     dataloader: 'shower_dataset_2_all_cond'
