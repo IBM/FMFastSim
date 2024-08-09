@@ -266,7 +266,8 @@ class ModelHandler:
         else:
             raise ValueError
 
-        wandb.watch(self._model, log_freq=100, log='all')
+        if self._log_to_wandb:
+            wandb.watch(self._model, log_freq=100, log='all')
 
         if 'max_valid_events' in train_info:
             max_valid_events = train_info['max_valid_events']
@@ -288,7 +289,7 @@ class ModelHandler:
         for args in train_info['plot_config']:
             if cnt%num_proc == self._rank:
                 shower_observables_callbacks.append(
-                    callback_type(train_info['plot_freq'], self, *args, valid_data, max_valid_events)
+                    callback_type(train_info['plot_freq'], self, *args, valid_data, max_valid_events,_log_to_wandb = self._log_to_wandb)
                 )
             cnt += 1
 
@@ -343,11 +344,12 @@ class ModelHandler:
                 print("Epoch {}:\tTrainLoss: {} \tValidLoss: {}, \tTime: {:.2f}sec.".format(epoch + 1, train_loss, val_loss, epoch_time),flush=True)
 
             # WandB logs
-            wandb.log({
-                'train_loss': train_loss,
-                'val_loss': val_loss,
-                'epoch': epoch
-            })
+            if self._log_to_wandb:
+                wandb.log({
+                    'train_loss': train_loss,
+                    'val_loss': val_loss,
+                    'epoch': epoch
+                })
 
             # Save model if improvement
             if epoch%10 == 0:
@@ -430,7 +432,7 @@ class ModelHandler:
         self.load_file = load_file
 
 class ValidationPlotCallback:
-    def __init__(self, verbose, handler, angle, energy, geometry, dataloader, max_valid_events=None):
+    def __init__(self, verbose, handler, angle, energy, geometry, dataloader, max_valid_events=None, _log_to_wandb=False):
         self.verbose = verbose
         self.handler = handler
         self.val_angle = angle
@@ -438,6 +440,8 @@ class ValidationPlotCallback:
         self.val_geometry = geometry
         self.max_events = max_valid_events
         self._setup(dataloader)
+
+        self._log_to_wandb = _log_to_wandb
 
     def _setup(self,dataloader):
 
@@ -505,8 +509,9 @@ class ValidationPlotCallback:
                f"{val_dir}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Angle_{self.val_angle}"
                for metric in observable_names
             ]
-            for file in plot_names:
-               wandb.log({file: wandb.Image(f"{file}.png")})
+            if self._log_to_wandb:
+                for file in plot_names:
+                   wandb.log({file: wandb.Image(f"{file}.png")})
 
             # 3D shower
             N_CELLS_R   = DataInfo().N_CELLS_R
@@ -528,11 +533,12 @@ class ValidationPlotCallback:
                 marker_color=[f"rgba(0,0,255,{i*100//normalize_intensity_by/100})" for i in inn],
             )
             go.Figure(trace).write_html(f"{val_dir}/3d_shower.html")
-            wandb.log({'shower_{}_{}'.format(self.val_angle, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
+            if self._log_to_wandb:
+                wandb.log({'shower_{}_{}'.format(self.val_angle, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
 
 #PLease use this one for dataset 2
 class ValidationPlotCallbackDiscrete:
-    def __init__(self, verbose, handler, theta, phi, energy, geometry, dataloader, max_valid_events=None):
+    def __init__(self, verbose, handler, theta, phi, energy, geometry, dataloader, max_valid_events=None,_log_to_wandb=False):
         self.verbose = verbose
         self.handler = handler
         self.val_phi = phi
@@ -541,6 +547,8 @@ class ValidationPlotCallbackDiscrete:
         self.val_geometry = geometry
         self.max_events = max_valid_events
         self._setup(dataloader)
+
+        self._log_to_wandb = _log_to_wandb
 
     def _setup(self,dataloader):
 
@@ -601,6 +609,9 @@ class ValidationPlotCallbackDiscrete:
             showers          = self.scale_method.inverse_transform(showers,         self.val_energy)
             generated_events = self.scale_method.inverse_transform(generated_events,self.val_energy)
 
+            showers          = 1000*showers
+            generated_events = 1000*generated_events
+
             # moved here as energy descaling is outside of ds2-scaling
             ecut = 0.0151
             if(ecut > 0):
@@ -618,8 +629,10 @@ class ValidationPlotCallbackDiscrete:
                f"{val_dir}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Theta_{self.val_theta}_Phi_{self.val_phi}"
                for metric in observable_names
             ]
-            for file in plot_names:
-               wandb.log({file: wandb.Image(f"{file}.png")})
+
+            if self._log_to_wandb:
+                for file in plot_names:
+                   wandb.log({file: wandb.Image(f"{file}.png")})
 
             # 3D shower
             N_CELLS_R   = DataInfo().N_CELLS_R
@@ -641,4 +654,5 @@ class ValidationPlotCallbackDiscrete:
                 marker_color=[f"rgba(0,0,255,{i*100//normalize_intensity_by/100})" for i in inn],
             )
             go.Figure(trace).write_html(f"{val_dir}/3d_shower.html")
-            wandb.log({'shower_{}_{}'.format(self.val_theta, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
+            if self._log_to_wandb:
+                wandb.log({'shower_{}_{}'.format(self.val_theta, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
