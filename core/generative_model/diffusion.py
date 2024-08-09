@@ -57,8 +57,10 @@ class Diffusion(nn.Module):
         self.register_buffer('alpha',alpha.float())
         self.register_buffer('beta' ,beta .float())
         self.register_buffer('gamma',gamma.float())
-        self.register_buffer('sigma',beta.sqrt().float())
-        self.sigma[0] = 0.0
+        
+        sigma = torch.zeros_like(beta)
+        sigma[1:] = beta[1:]*(1-gamma[:-1])/(1-gamma[1:])
+        self.register_buffer('sigma',sigma.sqrt().float())
 
         self.register_buffer('sqrt_one_minus_gamma',(1-gamma).sqrt().float())
         self.register_buffer('sqrt_gamma'          ,   gamma .sqrt().float())
@@ -80,8 +82,8 @@ class Diffusion(nn.Module):
         dim_t = dim_t_emb
         self.time_emb = Position_Embeddings(dim_t)
         self.cond_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                      nn.Linear(128  ,128),nn.SiLU(),
-                                      nn.Linear(128  ,dim_t))
+                                      nn.Linear(128  , 64),nn.SiLU(),nn.LayerNorm(64),
+                                      nn.Linear(64   ,dim_t))
 
         self.loss_counter = -1
 
@@ -101,7 +103,6 @@ class Diffusion(nn.Module):
 
 
     def forward(self, x_in, c_in, t_in):
-
         c0 = self.cond_emb(c_in)
         t0 = self.time_emb(t_in)
 
@@ -238,8 +239,10 @@ def sigmoid_schedule(num_steps,start=-3,end=3,tau=1):
 def cosine_schedule(num_steps,start=0,end=1,tau=1):
     t = torch.arange(0,1+1.e-6,step=1/(num_steps+1),dtype=torch.double)
 
-    x = ((t*(end-start)+start)*math.pi/2-1.e-6).cos().abs().pow(2*tau)
-    y = ((t*(end-start)+start)*math.pi/2-1.e-6).cos()
+    r = start/end
+    x = ((t*(1-r)+r)*math.pi/2-1.e-6).cos().pow(2*tau)
+    #x = ((t*(end-start)+start)*math.pi/2-1.e-6).cos().abs().pow(2*tau)
+    #y = ((t*(end-start)+start)*math.pi/2-1.e-6).cos()
 
     gamma = (x-x[-1])/(x[0]-x[-1])
     gamma = gamma[:-1] #remove the last knot

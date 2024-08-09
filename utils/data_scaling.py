@@ -61,12 +61,9 @@ class voxel_scaling:
         return energy
 
     def inverse_transform_energy(self, energy, energy_max=1000):
-        if self.scale_method == 'ds2_logit_trans_and_nomalization':
-            energy_min = 1 #after division by 1000
-            energy_max = energy_max #after division by 1000
-            energy = energy_min*(energy_max/energy_min)**energy
-        else:
-            energy = energy * energy_max
+        energy_min = 1 #after division by 1000
+        energy_max = energy_max #after division by 1000
+        energy = energy_min*(energy_max/energy_min)**energy
         return energy
 
     #theta from 0.0 to 3.14 -> 0 and 1 (could also use either cos or sin?)
@@ -200,7 +197,8 @@ class ds2_logit_trans_and_nomalization:
     def transform(self,x_in):
         shower = x_in/(self.scale_shower)
         shower = self.epsilon_logit + (1 - 2 * self.epsilon_logit) * shower #remove 0 and 1
-        shower = np.ma.log(shower/(1-shower)).filled(0) #applies logit on the shower, ma is a masked array, if it falls out the validity domain fills the value with 0
+        #shower = np.ma.log(shower/(1-shower)).filled(0) #applies logit on the shower, ma is a masked array, if it falls out the validity domain fills the value with 0
+        shower = np.log(shower/(1-shower)) #applies logit on the shower
         shower = (shower - self.mean) / self.std
         return shower
 
@@ -210,5 +208,5 @@ class ds2_logit_trans_and_nomalization:
         exp = np.exp(orignial_shower)    
         x_exp = exp/(1+exp)
         orignial_shower = (x_exp-self.epsilon_logit)/(1 - 2*self.epsilon_logit)
-        orignial_shower = (orignial_shower * self.scale_shower) * 1000
+        orignial_shower = (orignial_shower * self.scale_shower) #* 1000
         return orignial_shower
