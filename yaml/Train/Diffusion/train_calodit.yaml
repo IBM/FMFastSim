@@ -24,7 +24,7 @@ model_info:
         dim_c: 6                #dimension of conditioning variables (incl. geo)
         beta_info:              #diffusion scheduler info
             schedule: cos
-            num_steps: 200
+            num_steps: 400
             tau: 1
     network_param: #neural network specific parameter
         dim_r: 9
@@ -41,9 +41,9 @@ model_info:
 
 train_info:
     optimizer: Adam
-    epochs: 2000
+    epochs: 100
     learning_rate: 1.e-3
-    batch_size: 512
+    batch_size: 256
     lr_scheduler:
         scheduler: scheduled  #either 'scheduled' or 'on_plateau'
         milestones: [10,20,40,80,160,320,640]
@@ -51,22 +51,20 @@ train_info:
     save_freq: 100
     plot_freq: 50
     plot_config:
-        # - [1.57, 0.0,  50, 'SiW']
+        - [1.57, 0.0,  50, 'SiW']
         - [1.57, 0.0,  500, 'SiW']
 
 data_info:
     dataloader: 'shower_dataset_2_all_cond'
-    root_path: '/eos/user/p/praikwar/ddsim_out/Par04Flat'
-    valid_path: '/eos/geant4/fastSim/ddfastsim/Par04/dataset2_SiW_discrete'
+    root_path: '/eos/geant4/fastSim/ddfastsim/Par04/dataset2_SiW_1GeV1TeVFlat_theta0p87to2p27_phiFull/float32/'
+    valid_path: '/eos/geant4/fastSim/ddfastsim/Par04/dataset2_SiW_discrete/float32/'
     geo: ["SiW"]
     data_split: [0.95,0.03,0.02]   #fractions of train, validation, test sets
     max_num_events: 100000
 
 scale_info:
-    scale_method: 'ds2_logit_trans_and_nomalization'  #data transformatin: lin_trans, log_trans, or bi-log_trans, ds2_logit_trans_and_nomalization
+    scale_method: 'ds2_log_norm'  #data transformatin: lin_trans, log_trans, or bi-log_trans, ds2_log_norm
     scale_param:
-        mean: -12.802077
-        std: 2.076957
+        mean: -10.346238
+        std: 3.644565
         epsilon_logit: 1.e-6
-        scale_shower: 1.5
-    scale_by_energy: True  #scale the data by incident energy

@@ -186,27 +186,21 @@ class identity:
         return y_in
 
 #original CaloDit shower preprocessing (logit + normalization)
-class ds2_logit_trans_and_nomalization:
-    def __init__(self,mean,std,epsilon_logit=1.e-6,scale_shower=1.5):
-        self.name='ds2_logit_trans_and_nomalization'
-        self.epsilon_logit = epsilon_logit
+class ds2_log_norm:
+    def __init__(self,mean,std,epsilon_logit=1.e-6):
+        self.name='ds2_log_norm'
+        self.eps = epsilon_logit
         self.mean = mean
         self.std = std
-        self.scale_shower = scale_shower
 
     def transform(self,x_in):
-        shower = x_in/(self.scale_shower)
-        shower = self.epsilon_logit + (1 - 2 * self.epsilon_logit) * shower #remove 0 and 1
-        #shower = np.ma.log(shower/(1-shower)).filled(0) #applies logit on the shower, ma is a masked array, if it falls out the validity domain fills the value with 0
-        shower = np.log(shower/(1-shower)) #applies logit on the shower
+        shower = np.log(x_in + self.eps)
         shower = (shower - self.mean) / self.std
         return shower
 
     def inverse_transform(self,z_in):
-        orignial_shower = (z_in * self.std) + self.mean
-        orignial_shower = np.clip(orignial_shower, -88.72, 88.72) #clip values need to cahnge based on precision
-        exp = np.exp(orignial_shower)    
-        x_exp = exp/(1+exp)
-        orignial_shower = (x_exp-self.epsilon_logit)/(1 - 2*self.epsilon_logit)
-        orignial_shower = (orignial_shower * self.scale_shower) #* 1000
+        shower = (z_in * self.std) + self.mean
+        shower = np.clip(shower, -88.72, 88.72) #clip values need to cahnge based on precision
+        shower = np.exp(shower) - self.eps
+        shower = shower * 1000
         return orignial_shower
