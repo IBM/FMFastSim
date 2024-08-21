@@ -33,8 +33,8 @@ class voxel_scaling:
             self.scale = lin_trans(**scale_param)
         elif scale_method == 'logit_trans':
             self.scale = logit_trans(**scale_param)
-        elif scale_method == 'ds2_logit_trans_and_nomalization':
-            self.scale = ds2_logit_trans_and_nomalization(**scale_param)
+        elif scale_method == 'ds2_log_norm':
+            self.scale = ds2_log_norm(**scale_param)
         else:
             print('data is not scaled')
             self.scale = identity()
@@ -55,28 +55,29 @@ class voxel_scaling:
         return out
 
     def transform_energy(self, energy):
+        # provided in GeV, need to do convert to MeV during saving to h5 (inverse don't do this)
         energy_min = 1 #after division by 1000
         energy_max = 1000 #after division by 1000
-        energy = np.log10(energy/energy_min)/np.log10(energy_max/energy_min)
+        energy = energy / energy_max
         return energy
 
     def inverse_transform_energy(self, energy, energy_max=1000):
         energy_min = 1 #after division by 1000
         energy_max = energy_max #after division by 1000
-        energy = energy_min*(energy_max/energy_min)**energy
+        energy = energy * energy_max
         return energy
 
     #theta from 0.0 to 3.14 -> 0 and 1 (could also use either cos or sin?)
     def transform_theta(self, theta):
         theta_min = 1e-8
         theta_max = np.pi
-        theta = np.log10(theta/theta_min)/np.log10(theta_max/theta_min)
+        theta = theta / theta_max
         return theta
 
     def inverse_transform_theta(self, theta):
         theta_min = 1e-8 
         theta_max = np.pi 
-        theta = theta_min*(theta_max/theta_min)**theta
+        theta = theta * theta_max
         return theta
 
     #phi from -pi to pi -> 0 and 1 (periocity)
@@ -194,7 +195,7 @@ class ds2_log_norm:
         self.std = std
 
     def transform(self,x_in):
-        shower = np.log(x_in + self.eps)
+        shower = np.log(x_in / 1000 + self.eps)
         shower = (shower - self.mean) / self.std
         return shower
 
@@ -203,4 +204,4 @@ class ds2_log_norm:
         shower = np.clip(shower, -88.72, 88.72) #clip values need to cahnge based on precision
         shower = np.exp(shower) - self.eps
         shower = shower * 1000
-        return orignial_shower
+        return shower

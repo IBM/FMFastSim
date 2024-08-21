@@ -621,24 +621,27 @@ class ValidationPlotCallbackDiscrete:
             for file in plot_names:
                wandb.log({file: wandb.Image(f"{file}.png")})
 
-            # 3D shower
-            N_CELLS_R   = DataInfo().N_CELLS_R
-            N_CELLS_PHI = DataInfo().N_CELLS_PHI
-            N_CELLS_Z   = DataInfo().N_CELLS_Z
-            shower = generated_events[0].reshape(N_CELLS_R, N_CELLS_PHI, N_CELLS_Z)
-            r, phi, z, inn = np.stack([x.ravel() for x in np.mgrid[:N_CELLS_R, :N_CELLS_PHI, :N_CELLS_Z]] + [shower.ravel(),], axis=1).T
-            phi = phi / phi.max() * 2 * np.pi
-            x = r * np.cos(phi)
-            y = r * np.sin(phi)
+            try:
+                # 3D shower
+                N_CELLS_R   = DataInfo().N_CELLS_R
+                N_CELLS_PHI = DataInfo().N_CELLS_PHI
+                N_CELLS_Z   = DataInfo().N_CELLS_Z
+                shower = generated_events[0].reshape(N_CELLS_R, N_CELLS_PHI, N_CELLS_Z)
+                r, phi, z, inn = np.stack([x.ravel() for x in np.mgrid[:N_CELLS_R, :N_CELLS_PHI, :N_CELLS_Z]] + [shower.ravel(),], axis=1).T
+                phi = phi / phi.max() * 2 * np.pi
+                x = r * np.cos(phi)
+                y = r * np.sin(phi)
 
-            normalize_intensity_by = 30  # knob for transparency
-            trace = go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
-                mode='markers',
-                marker_symbol='square',
-                marker_color=[f"rgba(0,0,255,{i*100//normalize_intensity_by/100})" for i in inn],
-            )
-            go.Figure(trace).write_html(f"{val_dir}/3d_shower.html")
-            wandb.log({'shower_{}_{}'.format(self.val_theta, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
+                normalize_intensity_by = 30  # knob for transparency
+                trace = go.Scatter3d(
+                    x=x,
+                    y=y,
+                    z=z,
+                    mode='markers',
+                    marker_symbol='square',
+                    marker_color=[f"rgba(0,0,255,{i*100//normalize_intensity_by/100})" for i in inn],
+                )
+                go.Figure(trace).write_html(f"{val_dir}/3d_shower.html")
+                wandb.log({'shower_{}_{}'.format(self.val_theta, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
+            except:
+                print("skip 3d shower, wrong pixel range")
