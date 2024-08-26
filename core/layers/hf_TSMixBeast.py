@@ -115,19 +115,30 @@ class TSMixBeast(layer):
         test_data = torch.rand(1,context_length,num_input_channels)
         enc_out   = self.encoder(test_data)
 
-        emb_size = enc_out.last_hidden_flatten_state.size(-1)
+        enc_emb_size = dim_r*dim_v*dim_a
+        dec_emb_size = enc_out.last_hidden_flatten_state.size(-1)
 
-        self.decoder_input = torch.zeros(1,emb_size)
+        self.decoder_input = torch.zeros(1,dec_emb_size)
 
-        self.pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                     nn.Linear(128,128),nn.SiLU(),
-                                     nn.LayerNorm(128),
-                                     nn.Linear(128,emb_size))
+        self.enc_pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                         nn.Linear(128,128),nn.SiLU(),
+                                         nn.LayerNorm(128),
+                                         nn.Linear(128,enc_emb_size))
 
-        self.scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                       nn.Linear(128,128),nn.SiLU(),
-                                       nn.LayerNorm(128),
-                                       nn.Linear(128,emb_size))
+        self.enc_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                           nn.Linear(128,128),nn.SiLU(),
+                                           nn.LayerNorm(128),
+                                           nn.Linear(128,enc_emb_size))
+
+        self.dec_pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                         nn.Linear(128,128),nn.SiLU(),
+                                         nn.LayerNorm(128),
+                                         nn.Linear(128,dec_emb_size))
+
+        self.dec_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                           nn.Linear(128,128),nn.SiLU(),
+                                           nn.LayerNorm(128),
+                                           nn.Linear(128,dec_emb_size))
 
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def encoding(self,x_in,c_in=None,sampling=False):
@@ -137,6 +148,12 @@ class TSMixBeast(layer):
         nb = x0.size(0)
         nc = x0.size(-1)
         x0 = x0.reshape(nb,-1,nc)     #Batch x (Radial x Vertical) x Azimuthal
+
+        if c_in != None:
+            c0   = self.  enc_pos_emb(c_in).reshape(nb,-1,nc)
+            c1   = self.enc_scale_emb(c_in).reshape(nb,-1,nc)
+    
+            x0 = c0 + x0*(c1+1)
 
         enc_out = self.encoder(x0)
 
@@ -154,8 +171,8 @@ class TSMixBeast(layer):
     def decoding(self,z_in,c_in=None):
 
         if c_in != None:
-            c0   = self.  pos_emb(c_in)
-            c1   = self.scale_emb(c_in)
+            c0   = self.  dec_pos_emb(c_in)
+            c1   = self.dec_scale_emb(c_in)
 
             z_in = c0 + z_in*(c1+1)
 

@@ -109,7 +109,8 @@ class CaloDiT(nn.Module):
         z0 = patches + self.pos_embed
 
         for block in self.encoder:
-            z0 = block(patches,c_in)
+            #z0 = block(patches,c_in)
+            z0 = block(z0,c_in)
 
         if self.variational:
             z_mean = self.exp_net(z0)
@@ -126,10 +127,11 @@ class CaloDiT(nn.Module):
     decoding function takes a latent variable (z_in,c_in) and returns the output variable.
     """
     def decoding(self,z_in,c_in=None):
+        z0 = z_in
         for block in self.decoder:
-            z_in = block(z_in,c_in)
+            z0 = block(z0,c_in)
 
-        out = self.final_layer(z_in)
+        out = self.final_layer(z0)
         out = self.unpatchify(out)
         return out
 

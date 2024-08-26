@@ -255,16 +255,18 @@ class ModelHandler:
         else:
             lr_scheduler = {'scheduler':'on_plateau', 
                             'factor':0.5,
-                            'patience':30}
+                            'patience':10}
 
         if lr_scheduler['scheduler'] == 'on_plateau':
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, 'min', factor=lr_scheduler['factor'], patience=lr_scheduler['patience'], verbose=True)
+                optimizer, 'min', factor=lr_scheduler['factor'], patience=lr_scheduler['patience'])
         elif lr_scheduler['scheduler'] == 'scheduled':
             scheduler = torch.optim.lr_scheduler.MultiStepLR(
-                optimizer, milestones=lr_scheduler['milestones'], gamma= lr_scheduler['gamma'], verbose=False)
+                optimizer, milestones=lr_scheduler['milestones'], gamma= lr_scheduler['gamma'])
         else:
             raise ValueError
+
+        last_lr = train_info['learning_rate']
 
         if self._log_to_wandb:
             wandb.watch(self._model, log_freq=100, log='all')
@@ -337,6 +339,10 @@ class ModelHandler:
 
             if lr_scheduler['scheduler'] == 'on_plateau':
                 scheduler.step(val_loss)
+                current_lr = scheduler.get_last_lr()
+                if current_lr != last_lr:
+                    last_lr = current_lr
+                    print("Learning Rate is changed to {}".format(last_lr))
             else:
                 scheduler.step()
 

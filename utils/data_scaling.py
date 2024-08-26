@@ -43,14 +43,14 @@ class voxel_scaling:
         self.scale_method = scale_method
 
     def transform(self,x_in,e_in=None):
-        if self.scale_by_energy and (e_in is not None):
+        if self.scale_by_energy: # and (e_in is not None):
             x_in = x_in/e_in
         out = self.scale.transform(x_in)
         return out
 
     def inverse_transform(self,y_in,e_in=None):
         out = self.scale.inverse_transform(y_in)
-        if self.scale_by_energy and (e_in is not None):
+        if self.scale_by_energy: #and (e_in is not None):
             out = out*e_in
         return out
 

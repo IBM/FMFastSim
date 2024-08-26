@@ -103,19 +103,26 @@ def main():
 
     checkpoint_dir = exp_info['checkpoint_dir']
     validation_dir = exp_info['validation_dir']
-    wandb_entity = exp_info['wandb_entity']
+
+    if 'wandb_entity' in exp_info:
+        _log_to_wandb = True
+        wandb_entity = exp_info['wandb_entity']
+    else:
+        _log_to_wandb = False
+        wandb_entity = None
 
     # 3. Manufacture model handler.
     print('Start Loading network')
     model_handler = ResolveModel(model_info,
-        _run_name=run_name, _project_name=study_name, _log_to_wandb=True,
+        _run_name=run_name, _project_name=study_name, _log_to_wandb=_log_to_wandb,
         _checkpoint_dir=checkpoint_dir,_validation_dir=validation_dir,
         _device=device,_rank=rank,_num_gpu=num_gpu, _wandb_entity=wandb_entity
         )
     model_handler.save_params(all_params)
 
     # Upload yaml file to record the experiemnt details
-    wandb.save(sys.argv[1])
+    if _log_to_wandb:
+        wandb.save(sys.argv[1])
 
     # 4. Train model.
     print('Start Training')

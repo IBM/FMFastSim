@@ -41,17 +41,12 @@ class VAE(nn.Module):
         self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,pdf=pdf)
 
     def forward(self, inputs):
-        (x_input, e_input, angle_input, geo_input) = inputs
 
-        if e_input.dim() == 1:
-            e_input     = e_input    .unsqueeze(1)
-            angle_input = angle_input.unsqueeze(1)
-
-        c_input = torch.cat([e_input,angle_input,geo_input],dim=1)
+        x_input, cond_var = self.prepare_input(X)
 
         if x_input == None:
             z = torch.zeros_like(self.model.decoder_input,device=e_input.device) \
-                     .repeat_interleave(e_input.size(0),dim=0)
+                     .repeat_interleave(cond_var.size(0),dim=0)
             z.normal_()
         else:
             mu, var = self.model.encoding(x_input)
@@ -59,10 +54,24 @@ class VAE(nn.Module):
 
             z = mu + torch.randn_like(var)*var.sqrt()
 
-        x0    = self.model.decoding(z,c_input)
+        x0    = self.model.decoding(z,cond_var)
         x_out = self.gen_decoder(x0)
 
         return x_out
+
+    def prepare_input(self,X,return_cond=False):
+        x_input, conditions = X[0], list(X[1:])
+
+        for i in range(len(conditions)):
+            if conditions[i].dim() == 1:
+                conditions[i]     = conditions[i].unsqueeze(1)
+
+        cond_var = torch.cat(conditions,dim=1)
+
+        if return_cond:
+            return cond_var
+        else:
+            return x_input, cond_var
 
     def generate(self,inputs):
         x_out = self.forward(inputs)

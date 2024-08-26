@@ -35,6 +35,7 @@ class Diffusion(nn.Module):
                  res_conn  = True,              #resnet connection
                  add_mse   = False,             #addtional mse
                  reg_coef=0.0,reg_model='none', #regularization parameters
+                 uniform_t = True,
                  ):
 
         super().__init__()
@@ -45,6 +46,8 @@ class Diffusion(nn.Module):
 
         self.res_conn = res_conn
         self.add_mse  = add_mse
+
+        self.uniform_t = uniform_t
 
         self.regularizer = regularizer(reg_model,reg_coef)
 
@@ -80,9 +83,12 @@ class Diffusion(nn.Module):
         self.register_buffer('T',torch.tensor([beta.size(0)],dtype=torch.int32))
 
         dim_t = dim_t_emb
-        self.time_emb = Position_Embeddings(dim_t)
+        self.time_emb = nn.Sequential(Position_Embeddings(dim_t),
+                                      nn.Linear(dim_t,  128),nn.SiLU(),
+                                      nn.Linear(128  ,dim_t))
+
         self.cond_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                      nn.Linear(128  , 64),nn.SiLU(),nn.LayerNorm(64),
+                                      nn.Linear(128  , 64),nn.SiLU(), #nn.LayerNorm(64),
                                       nn.Linear(64   ,dim_t))
 
         self.loss_counter = -1
@@ -196,8 +202,11 @@ class Position_Embeddings(nn.Module):
 #Define noise schedulers
 def noise_scheduler(schedule='cos',num_steps=200,tau=1,**kwargs):
     if schedule == 'cos':
-        print('use cosine gamma scheduler')
+        print('use cosine-1 gamma scheduler')
         gamma = cosine_schedule(num_steps,tau=tau)
+    elif schedule == 'cos2':
+        print('use cosine-2 gamma scheduler')
+        gamma = cosine2_schedule(num_steps)
     elif schedule == 'sigmoid':
         print('use sigmoid gamma scheduler')
         gamma = sigmoid_schedule(num_steps,tau=tau)
@@ -208,9 +217,9 @@ def noise_scheduler(schedule='cos',num_steps=200,tau=1,**kwargs):
         print(f'{gamma_schedule} scheduler is not defined')
         raise ValueError
 
-    alpha = gamma[1:]/gamma[:-1]
-    beta  = 1-alpha
-    gamma = gamma[1:] #remove t = 0
+    alpha     = gamma*1.0
+    alpha[1:] = alpha[1:]/gamma[:-1]
+    beta      = 1-alpha
 
     print(f'beta : max {beta [-1].item()} and min {beta [ 0].item()}')
     print(f'gamma: max {gamma[ 0].item()} and min {gamma[-1].item()}')
@@ -224,7 +233,7 @@ def linear_schedule(num_steps=200):
     t = torch.arange(0,1+1.e-6,step=1/(num_steps+1),dtype=torch.double)
 
     gamma = 1-t
-    gamma = gamma[:-1] #remove the last knot
+    gamma = gamma[1:-1] #remove the first and last knots
     return gamma
 
 def sigmoid_schedule(num_steps,start=-3,end=3,tau=1):
@@ -233,7 +242,7 @@ def sigmoid_schedule(num_steps,start=-3,end=3,tau=1):
     x = ((t*(end-start)+start)/tau).sigmoid()
 
     gamma = (x-x[-1])/(x[0]-x[-1])
-    gamma = gamma[:-1] #remove the last knot
+    gamma = gamma[1:-1] #remove the first and last knots
     return gamma
 
 def cosine_schedule(num_steps,start=0,end=1,tau=1):
@@ -245,7 +254,15 @@ def cosine_schedule(num_steps,start=0,end=1,tau=1):
     #y = ((t*(end-start)+start)*math.pi/2-1.e-6).cos()
 
     gamma = (x-x[-1])/(x[0]-x[-1])
-    gamma = gamma[:-1] #remove the last knot
+    gamma = gamma[1:-1] #remove the first and last knots
+    return gamma
+
+def cosine2_schedule(num_steps,s=0.008):
+    t = torch.arange(0,1+1.e-6,step=1/(num_steps+1),dtype=torch.double)
+    x = ((t+s)/(1+s)*math.pi*0.5).cos().pow(2)
+
+    gamma = x/x[0]
+    gamma = gamma[1:-1]
     return gamma
 
 #########################################################################################################
@@ -292,7 +309,10 @@ class DiffusionHandler(ModelHandler):
         if self._ddp:
             model = self._ddp_model
 
-        time = torch.randint(T,(trainloader.batch_size,),device=self._device).view(-1,1,1,1)
+        if model.uniform_t:
+            time = torch.randint(T,(1,),device=self._device)
+        else:
+            time = torch.randint(T,(trainloader.batch_size,),device=self._device).view(-1,1,1,1)
 
         inv_trans = trainloader.dataset.scale_method.inverse_transform
 
@@ -303,7 +323,10 @@ class DiffusionHandler(ModelHandler):
             cond_var = prepare_input(X,return_cond=True)
 
             #sample time
-            tt = time.random_(0,T)[:y.size(0)]
+            if model.uniform_t:
+                tt = time.random_(to=T).expand(y.size(0),1,1,1)
+            else:
+                tt = time.random_(0,T)[:y.size(0)]
 
             #prior sampling
             xt,yy = prior_sampling(y,tt)
@@ -338,7 +361,10 @@ class DiffusionHandler(ModelHandler):
                 cond_var = prepare_input(X,return_cond=True)
 
                 #sample time
-                tt = time.random_(0,T)[:y.size(0)]
+                if model.uniform_t:
+                    tt = time.random_(to=T).expand(y.size(0),1,1,1)
+                else:
+                    tt = time.random_(0,T)[:y.size(0)]
 
                 #prior sampling
                 xt,yy = prior_sampling(y,tt)
