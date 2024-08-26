@@ -282,15 +282,15 @@ class Dataset(Dataset):
     def read_local(self, id0, id1, h5_showers, h5_energy_particle, h5_theta, h5_phi):
 
         #read local
-        local_energy = h5_showers[id0:id1].astype(np.float32)/1000.0
+        local_energy = h5_showers[id0:id1].astype(np.float32)
         local_energy = local_energy[:, :(R_HIGH + 1), :, Z_LOW:(Z_HIGH + 1)]
-        local_energy_particle = h5_energy_particle[id0:id1].astype(np.float32)/1000.0
+        local_energy_particle = h5_energy_particle[id0:id1].astype(np.float32)
         local_theta = h5_theta[id0:id1].astype(np.float32)
         local_phi = h5_phi[id0:id1].astype(np.float32)
 
         # reshape for preprocessing
         local_energy = local_energy.reshape(-1,N_CELLS_R*N_CELLS_PHI*N_CELLS_Z)
-        local_energy_particle = local_energy_particle.reshape(-1,1)
+        local_energy_particle = local_energy_particle.reshape(-1,1) / 1000
         local_theta = local_theta.reshape(-1,1)
         local_phi = local_phi.reshape(-1,1)
 

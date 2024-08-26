@@ -109,7 +109,6 @@ class CaloDiT(nn.Module):
         z0 = patches + self.pos_embed
 
         for block in self.encoder:
-            #z0 = block(patches,c_in)
             z0 = block(z0,c_in)
 
         if self.variational:

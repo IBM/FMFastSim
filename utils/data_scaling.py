@@ -33,8 +33,8 @@ class voxel_scaling:
             self.scale = lin_trans(**scale_param)
         elif scale_method == 'logit_trans':
             self.scale = logit_trans(**scale_param)
-        elif scale_method == 'ds2_logit_trans_and_nomalization':
-            self.scale = ds2_logit_trans_and_nomalization(**scale_param)
+        elif scale_method == 'ds2_log_norm':
+            self.scale = ds2_log_norm(**scale_param)
         else:
             print('data is not scaled')
             self.scale = identity()
@@ -55,28 +55,29 @@ class voxel_scaling:
         return out
 
     def transform_energy(self, energy):
+        # provided in GeV, need to do convert to MeV during saving to h5 (inverse don't do this)
         energy_min = 1 #after division by 1000
         energy_max = 1000 #after division by 1000
-        energy = np.log10(energy/energy_min)/np.log10(energy_max/energy_min)
+        energy = energy / energy_max
         return energy
 
     def inverse_transform_energy(self, energy, energy_max=1000):
         energy_min = 1 #after division by 1000
         energy_max = energy_max #after division by 1000
-        energy = energy_min*(energy_max/energy_min)**energy
+        energy = energy * energy_max
         return energy
 
     #theta from 0.0 to 3.14 -> 0 and 1 (could also use either cos or sin?)
     def transform_theta(self, theta):
         theta_min = 1e-8
         theta_max = np.pi
-        theta = np.log10(theta/theta_min)/np.log10(theta_max/theta_min)
+        theta = theta / theta_max
         return theta
 
     def inverse_transform_theta(self, theta):
         theta_min = 1e-8 
         theta_max = np.pi 
-        theta = theta_min*(theta_max/theta_min)**theta
+        theta = theta * theta_max
         return theta
 
     #phi from -pi to pi -> 0 and 1 (periocity)
@@ -186,27 +187,21 @@ class identity:
         return y_in
 
 #original CaloDit shower preprocessing (logit + normalization)
-class ds2_logit_trans_and_nomalization:
-    def __init__(self,mean,std,epsilon_logit=1.e-6,scale_shower=1.5):
-        self.name='ds2_logit_trans_and_nomalization'
-        self.epsilon_logit = epsilon_logit
+class ds2_log_norm:
+    def __init__(self,mean,std,epsilon_logit=1.e-6):
+        self.name='ds2_log_norm'
+        self.eps = epsilon_logit
         self.mean = mean
         self.std = std
-        self.scale_shower = scale_shower
 
     def transform(self,x_in):
-        shower = x_in/(self.scale_shower)
-        shower = self.epsilon_logit + (1 - 2 * self.epsilon_logit) * shower #remove 0 and 1
-        #shower = np.ma.log(shower/(1-shower)).filled(0) #applies logit on the shower, ma is a masked array, if it falls out the validity domain fills the value with 0
-        shower = np.log(shower/(1-shower)) #applies logit on the shower
+        shower = np.log(x_in / 1000 + self.eps)
         shower = (shower - self.mean) / self.std
         return shower
 
     def inverse_transform(self,z_in):
-        orignial_shower = (z_in * self.std) + self.mean
-        orignial_shower = np.clip(orignial_shower, -88.72, 88.72) #clip values need to cahnge based on precision
-        exp = np.exp(orignial_shower)    
-        x_exp = exp/(1+exp)
-        orignial_shower = (x_exp-self.epsilon_logit)/(1 - 2*self.epsilon_logit)
-        orignial_shower = (orignial_shower * self.scale_shower) #* 1000
-        return orignial_shower
+        shower = (z_in * self.std) + self.mean
+        shower = np.clip(shower, -88.72, 88.72) #clip values need to cahnge based on precision
+        shower = np.exp(shower) - self.eps
+        shower = shower * 1000
+        return shower

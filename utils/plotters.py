@@ -185,7 +185,6 @@ class ProfilePlotter(Plotter):
 
         # Plot histograms.
         if plot_profile:
-            # import pdb;pdb.set_trace()
             # We already have the bins (layers) and freqencies (energies),
             # therefore directly plotting a step plot + lines instead of a hist plot.
             axes[0].step(bins[:-1],
