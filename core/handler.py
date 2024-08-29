@@ -263,6 +263,9 @@ class ModelHandler:
         elif lr_scheduler['scheduler'] == 'scheduled':
             scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 optimizer, milestones=lr_scheduler['milestones'], gamma= lr_scheduler['gamma'])
+        elif lr_scheduler['scheduler'] == 'none':
+            scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                optimizer, milestones=[train_info['epochs']+100], gamma= 1)
         else:
             raise ValueError
 
@@ -339,12 +342,13 @@ class ModelHandler:
 
             if lr_scheduler['scheduler'] == 'on_plateau':
                 scheduler.step(val_loss)
-                current_lr = scheduler.get_last_lr()
-                if current_lr != last_lr:
-                    last_lr = current_lr
-                    print("Learning Rate is changed to {}".format(last_lr))
             else:
                 scheduler.step()
+
+            current_lr = scheduler.get_last_lr()
+            if current_lr != last_lr:
+                last_lr = current_lr
+                print("Learning Rate is changed to {}".format(last_lr))
 
             if self._rank == 0:
                 print("Epoch {}:\tTrainLoss: {} \tValidLoss: {}, \tTime: {:.2f}sec.".format(epoch + 1, train_loss, val_loss, epoch_time),flush=True)
@@ -615,8 +619,8 @@ class ValidationPlotCallbackDiscrete:
             showers          = self.scale_method.inverse_transform(showers,         self.val_energy)
             generated_events = self.scale_method.inverse_transform(generated_events,self.val_energy)
 
-            showers          = 1000*showers
-            generated_events = 1000*generated_events
+            #showers          = 1000*showers
+            #generated_events = 1000*generated_events
 
             # moved here as energy descaling is outside of ds2-scaling
             ecut = 0.0151

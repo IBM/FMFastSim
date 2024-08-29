@@ -25,7 +25,7 @@ import torch.nn.functional as F
 
 #scaling function
 class voxel_scaling:
-    def __init__(self,scale_method=None,scale_param={'dummy':None},scale_by_energy=True):
+    def __init__(self,scale_method=None,scale_param={'dummy':None},scale_by_energy=False):
 
         if scale_method == 'log_trans':
             self.scale = log_trans(**scale_param)

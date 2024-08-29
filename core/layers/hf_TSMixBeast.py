@@ -121,23 +121,23 @@ class TSMixBeast(layer):
         self.decoder_input = torch.zeros(1,dec_emb_size)
 
         self.enc_pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                         nn.Linear(128,128),nn.SiLU(),
                                          nn.LayerNorm(128),
+                                         nn.Linear(128,128),nn.SiLU(),
                                          nn.Linear(128,enc_emb_size))
 
         self.enc_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                           nn.Linear(128,128),nn.SiLU(),
                                            nn.LayerNorm(128),
+                                           nn.Linear(128,128),nn.SiLU(),
                                            nn.Linear(128,enc_emb_size))
 
         self.dec_pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                         nn.Linear(128,128),nn.SiLU(),
                                          nn.LayerNorm(128),
+                                         nn.Linear(128,128),nn.SiLU(),
                                          nn.Linear(128,dec_emb_size))
 
         self.dec_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                           nn.Linear(128,128),nn.SiLU(),
                                            nn.LayerNorm(128),
+                                           nn.Linear(128,128),nn.SiLU(),
                                            nn.Linear(128,dec_emb_size))
 
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
