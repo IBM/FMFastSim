@@ -24,6 +24,8 @@ import torch.nn.functional as F
 from core.layers.layer import layer
 from core.layers.tsbeastbase import TSBeastBaseDecoderWithReconstructionHead, TSBeastBaseModel, TSBeastBaseConfig
 
+import einops
+
 class TSMixBeast(layer):
     def __init__(self,
         dim_r = 18,
@@ -46,6 +48,7 @@ class TSMixBeast(layer):
         head_dropout       = 0.2,
         scaling            = "none",
         use_positional_encoding=False,
+        positional_encoding_type='random',
         self_attn           = False,
         self_attn_heads     = 1,
         decoder_num_layers  = 4,
@@ -92,6 +95,7 @@ class TSMixBeast(layer):
             head_dropout=head_dropout,
             scaling="none", #scaling is not appplied outside of the model
             use_positional_encoding=use_positional_encoding,
+            positional_encoding_type=positional_encoding_type,
             self_attn=self_attn,
             self_attn_heads=self_attn_heads,
             decoder_num_layers=decoder_num_layers,
@@ -143,11 +147,10 @@ class TSMixBeast(layer):
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def encoding(self,x_in,c_in=None,sampling=False):
 
-        x0 = x_in.permute(0,1,3,2) #Batch x  Radial x Vertical  x Azimuthal
+        x0 = einops.rearrange(x_in,'b r a v -> b (a v) r')
 
         nb = x0.size(0)
         nc = x0.size(-1)
-        x0 = x0.reshape(nb,-1,nc)     #Batch x (Radial x Vertical) x Azimuthal
 
         if c_in != None:
             c0   = self.  enc_pos_emb(c_in).reshape(nb,-1,nc)
@@ -179,13 +182,13 @@ class TSMixBeast(layer):
         dec_out = self.decoder(decoder_input=z_in)
 
         x0 = dec_out.reconstruction_outputs*self.output_scale + self.output_bias
-        #x0 is in dimension Batch x (Radial x Vertical) x Azimuthal
+        #x0 is in dimension Batch x (Azimuthal x Vertical) x Radial
 
         nb = x0.size(0)
         nc = x0.size(-1)
-        x0 = x0.reshape(nb,self.dim_r,self.dim_v,nc) #to Batch x (Radial x Vertical) x Azimuthal
+        x0 = x0.reshape(nb,self.dim_a,self.dim_v,nc) #to Batch x Azimuthal x Vertical x Radial
   
-        x0 = x0.permute(0,1,3,2) #to Batch x Radial x Azimuthal x Vertical
+        x0 = einops.rearrange(x0,'b a v r -> b r a v')
 
         if self.lower_bound != None:
             x0 = F.relu(x0-self.lower_bound)+self.lower_bound
