@@ -33,10 +33,10 @@ class TSMixBeast(layer):
         dim_v = 45,
         dim_c = 4,
     #TSMixBeast parameters
-        context_length     = 810,   # dim_v*dim_r=45*18
+        context_length     = 2250,  # dim_v*dim_a=45*50
         patch_length       = 45,    # dim_v
-        num_input_channels = 50,    # dim_a
         patch_stride       = 45,    # dim_v
+        num_input_channels = 18,    # dim_r
         d_model            = 0,     # later, set to patch_length
         decoder_d_model    = 0,     # later, set to patch_length
         expansion_factor   = 2,

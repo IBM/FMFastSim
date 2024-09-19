@@ -24,6 +24,8 @@ import torch.nn.functional as F
 from core.layers.layer import layer
 from core.layers.patchtsmixervae import PatchTSMixerVAEConfig,PatchTSMixerVAEDecoderWithReconstructionHead,PatchTSMixerVAEModel
 
+import einops
+
 #
 # Wrapper for PatchTSMixer from HuggingFace Transformer library
 #
@@ -45,10 +47,10 @@ class PatchTSMixer(layer):
         dim_v = 45,
         dim_c = 4,
     #PatchTSMixer
-        context_length     = 810,   # dim_v*dim_r=45*18
+        context_length     = 2250,  # dim_v*dim_a=45*50
         patch_length       = 45,    # dim_v
-        num_input_channels = 50,    # dim_a
         patch_stride       = 45,    # dim_v
+        num_input_channels = 18,    # dim_r
         d_model            = 0,     # later, set to patch_length
         decoder_d_model    = 0,     # later, set to patch_length
         expansion_factor   = 2,
@@ -60,6 +62,7 @@ class PatchTSMixer(layer):
         head_dropout       = 0.2,
         scaling            = "none",
         use_positional_encoding=False,
+        positional_encoding_type='random',
         self_attn           = False,
         self_attn_heads     = 1,
         decoder_num_layers  = 4,
@@ -149,11 +152,10 @@ class PatchTSMixer(layer):
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def encoding(self,x_in,c_in=None,sampling=False):
 
-        x0 = x_in.permute(0,1,3,2) #Batch x  Radial x Vertical  x Azimuthal
+        x0 = einops.rearrange(x_in,'b r a v -> b (a v) r')
 
         nb = x0.size(0)
         nc = x0.size(-1)
-        x0 = x0.reshape(nb,-1,nc)     #Batch x (Radial x Vertical) x Azimuthal
 
         if c_in != None:
             c0   = self.  enc_pos_emb(c_in).reshape(nb,-1,nc)
@@ -189,9 +191,9 @@ class PatchTSMixer(layer):
 
         nb = x0.size(0)
         nc = x0.size(-1)
-        x0 = x0.reshape(nb,self.dim_r,self.dim_v,nc) #to Batch x (Radial x Vertical) x Azimuthal
+        x0 = x0.reshape(nb,self.dim_a,self.dim_v,nc) #to Batch x Azimuthal x Vertical x Radial
   
-        x0 = x0.permute(0,1,3,2) #to Batch x Radial x Azimuthal x Vertical
+        x0 = einops.rearrange(x0,'b a v r -> b r a v')
 
         if self.lower_bound != None:
             x0 = F.relu(x0-self.lower_bound)+self.lower_bound
