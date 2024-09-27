@@ -225,6 +225,9 @@ class TSBeastBaseConfig(PretrainedConfig):
         decoder_num_layers: int = 8,
         decoder_d_model: int = 16,
         decoder_mode: str = "mix_channel",
+        # mixer configuration
+        encoder_resconn: bool = True,
+        decoder_resconn: bool = True,
         # compression/expansion level
         num_patches_layerwise_scale: Optional[List[float]] = None,
         num_channels_layerwise_scale: Optional[List[float]] = None,
@@ -274,6 +277,11 @@ class TSBeastBaseConfig(PretrainedConfig):
         self.decoder_d_model_layerwise_scale = decoder_d_model_layerwise_scale
         self.decoder_num_channels_layerwise_scale = decoder_num_channels_layerwise_scale
         self.decoder_num_patches_layerwise_scale = decoder_num_patches_layerwise_scale
+
+        self.encoder_resconn = encoder_resconn
+        self.decoder_resconn = decoder_resconn
+
+        self.mixer_resconn = self.encoder_resconn
 
         self.variational = variational
         self.kl_loss_weight = kl_loss_weight
@@ -523,6 +531,8 @@ class TSBeastBaseChannelFeatureMixerBlock(nn.Module):
                 in_size=config.num_input_channels, out_size=config.num_input_channels
             )
 
+        self.resconn = config.mixer_resconn
+
     def forward(self, inputs: torch.Tensor):
         """
         Args:
@@ -543,7 +553,10 @@ class TSBeastBaseChannelFeatureMixerBlock(nn.Module):
 
         inputs = inputs.permute(0, 3, 2, 1)
 
-        out = inputs + residual
+        if self.resconn:
+            out = inputs + residual
+        else:
+            out = inputs
         return out
 
 
@@ -721,6 +734,8 @@ class PatchMixerBlock(nn.Module):
         self.self_attn = config.self_attn
         self.gated_attn = config.gated_attn
 
+        self.resconn = config.mixer_resconn
+
         self.mlp = TSBeastBaseMLP(
             in_features=config.num_patches,
             out_features=config.num_patches,
@@ -770,7 +785,10 @@ class PatchMixerBlock(nn.Module):
         if self.self_attn:
             hidden_state = self.norm_attn(hidden_state + x_attn)
 
-        out = hidden_state + residual
+        if self.resconn:
+            out = hidden_state + residual
+        else:
+            out = hidden_state
         return out
 
 
@@ -789,6 +807,8 @@ class FeatureMixerBlock(nn.Module):
         self.norm = TSBeastBaseNormLayer(config)
 
         self.gated_attn = config.gated_attn
+
+        self.resconn = config.mixer_resconn
 
         self.mlp = TSBeastBaseMLP(
             in_features=config.d_model,
@@ -815,7 +835,10 @@ class FeatureMixerBlock(nn.Module):
         if self.gated_attn:
             hidden = self.gating_block(hidden)
 
-        out = hidden + residual
+        if self.resconn:
+            out = hidden + residual
+        else:
+            out = hidden
         return out
 
 
@@ -970,6 +993,8 @@ class TSBeastBaseDecoder(nn.Module):
         decoder_config.num_channels_layerwise = config.decoder_num_channels_layerwise
         decoder_config.num_patches_layerwise = config.decoder_num_patches_layerwise
         decoder_config.d_model_layerwise = config.decoder_d_model_layerwise
+
+        decoder_config.mixer_resconn = config.decoder_resconn
 
         self.decoder_block = TSBeastBaseBlock(decoder_config)
 

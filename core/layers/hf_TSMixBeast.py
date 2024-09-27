@@ -33,19 +33,15 @@ class TSMixBeast(layer):
         dim_v = 45,
         dim_c = 4,
     #TSMixBeast parameters
-        context_length     = 2250,  # dim_v*dim_a=45*50
-        patch_length       = 45,    # dim_v
-        patch_stride       = 45,    # dim_v
-        num_input_channels = 18,    # dim_r
-        d_model            = 0,     # later, set to patch_length
-        decoder_d_model    = 0,     # later, set to patch_length
+        channel_dim        = 'r',
+        patch_dim          = 'v',
         expansion_factor   = 2,
         num_layers         = 4,
-        dropout            = 0.2,
+        dropout            = 0.0,
         mode               = "mix_channel",  # either common_channel,  mix_channel
         gated_attn         = True,
         norm_mlp           = "LayerNorm",
-        head_dropout       = 0.2,
+        head_dropout       = 0.0,
         scaling            = "none",
         use_positional_encoding=False,
         positional_encoding_type='random',
@@ -53,6 +49,7 @@ class TSMixBeast(layer):
         self_attn_heads     = 1,
         decoder_num_layers  = 4,
         decoder_mode        = "mix_channel",
+        reconstruction_type = "patchwise",
         #encoder compression
         d_model_layerwise_scale             = [1, 0.75, 0.5, 0.5],
         num_patches_layerwise_scale         = [1, 0.75, 0.5, 0.5],
@@ -61,6 +58,10 @@ class TSMixBeast(layer):
         decoder_d_model_layerwise_scale     = [0.5, 0.5, 0.75, 1],
         decoder_num_patches_layerwise_scale = [0.5, 0.5, 0.75, 1],
         decoder_num_channels_layerwise_scale= [0.5, 0.5, 0.75, 1],
+        #residual connection
+        encoder_resconn = True,
+        decoder_resconn = True,
+        #variational auto-encoder
         variational=False,
     #Output
         lower_bound=None,
@@ -74,6 +75,24 @@ class TSMixBeast(layer):
         self.dim_a = dim_a
         self.dim_r = dim_r
         self.dim_c = dim_c
+
+        length_dim = {'a':dim_a,'v':dim_v,'r':dim_r}
+
+        context_length = 1
+        for i in [k for k in ['a','v','r'] if k != channel_dim]:
+            context_length *= length_dim[i]
+
+        patch_length       = length_dim[  patch_dim]
+        patch_stride       = length_dim[  patch_dim]
+        num_input_channels = length_dim[channel_dim]
+
+        first_dim  = [k for k in ['a','v','r'] if (k != patch_dim) and (k != channel_dim)][0]
+        second_dim = patch_dim
+        third_dim  = channel_dim
+
+        self.enc_dim = [length_dim[first_dim],length_dim[second_dim],length_dim[third_dim]]
+        self.enc_arrange = f'b r a v -> b ({first_dim} {second_dim}) {third_dim}'
+        self.dec_arrange = f'b {first_dim} {second_dim} {third_dim} -> b r a v'
 
         self.lower_bound = lower_bound
         self.variational = variational
@@ -108,6 +127,8 @@ class TSMixBeast(layer):
             decoder_num_channels_layerwise_scale=decoder_num_channels_layerwise_scale,
             d_model=patch_length,          #d_model is set to patch_length
             decoder_d_model=patch_length,  #d_model is set to patch_length
+            encoder_resconn=encoder_resconn,
+            decoder_resconn=decoder_resconn,
             variational=variational,
         )
 
@@ -125,29 +146,29 @@ class TSMixBeast(layer):
         self.decoder_input = torch.zeros(1,dec_emb_size)
 
         self.enc_pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                         nn.LayerNorm(128),
+                                         #nn.LayerNorm(128),
                                          nn.Linear(128,128),nn.SiLU(),
                                          nn.Linear(128,enc_emb_size))
 
         self.enc_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                           nn.LayerNorm(128),
+                                           #nn.LayerNorm(128),
                                            nn.Linear(128,128),nn.SiLU(),
                                            nn.Linear(128,enc_emb_size))
 
         self.dec_pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                         nn.LayerNorm(128),
+                                         #nn.LayerNorm(128),
                                          nn.Linear(128,128),nn.SiLU(),
                                          nn.Linear(128,dec_emb_size))
 
         self.dec_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                           nn.LayerNorm(128),
+                                           #nn.LayerNorm(128),
                                            nn.Linear(128,128),nn.SiLU(),
                                            nn.Linear(128,dec_emb_size))
 
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def encoding(self,x_in,c_in=None,sampling=False):
 
-        x0 = einops.rearrange(x_in,'b r a v -> b (a v) r')
+        x0 = einops.rearrange(x_in,self.enc_arrange)
 
         nb = x0.size(0)
         nc = x0.size(-1)
@@ -186,9 +207,9 @@ class TSMixBeast(layer):
 
         nb = x0.size(0)
         nc = x0.size(-1)
-        x0 = x0.reshape(nb,self.dim_a,self.dim_v,nc) #to Batch x Azimuthal x Vertical x Radial
+        x0 = x0.reshape(nb,self.enc_dim[0],self.enc_dim[1],self.enc_dim[2])
   
-        x0 = einops.rearrange(x0,'b a v r -> b r a v')
+        x0 = einops.rearrange(x0,self.dec_arrange)
 
         if self.lower_bound != None:
             x0 = F.relu(x0-self.lower_bound)+self.lower_bound

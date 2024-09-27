@@ -209,6 +209,9 @@ class PatchTSMixerVAEConfig(PretrainedConfig):
         decoder_num_layers: int = 8,
         decoder_d_model: int = 16,
         decoder_mode: str = "mix_channel",
+        # mixer configuration
+        encoder_resconn: bool = True,
+        decoder_resconn: bool = True,
         # compression/expansion level
         d_model_layerwise_scale: Optional[List[float]] = None,
         decoder_d_model_layerwise_scale: Optional[List[float]] = None,
@@ -250,6 +253,11 @@ class PatchTSMixerVAEConfig(PretrainedConfig):
         self.d_model_layerwise_scale = d_model_layerwise_scale
 
         self.decoder_d_model_layerwise_scale = decoder_d_model_layerwise_scale
+
+        self.encoder_resconn = encoder_resconn
+        self.decoder_resconn = decoder_resconn
+
+        self.mixer_resconn = self.encoder_resconn
 
         self.variational = variational
         self.kl_loss_weight = kl_loss_weight
@@ -478,6 +486,8 @@ class PatchTSMixerVAEChannelFeatureMixerBlock(nn.Module):
                 in_size=config.num_input_channels, out_size=config.num_input_channels
             )
 
+        self.resconn = config.mixer_resconn
+
     def forward(self, inputs: torch.Tensor):
         """
         Args:
@@ -498,7 +508,10 @@ class PatchTSMixerVAEChannelFeatureMixerBlock(nn.Module):
 
         inputs = inputs.permute(0, 3, 2, 1)
 
-        out = inputs + residual
+        if self.resconn:
+            out = inputs + residual
+        else:
+            out = inputs
         return out
 
 
@@ -695,6 +708,8 @@ class PatchMixerBlock(nn.Module):
             )
             self.norm_attn = PatchTSMixerVAENormLayer(config)
 
+        self.resconn = config.mixer_resconn
+
     def forward(self, hidden_state):
         """
         Args:
@@ -727,7 +742,10 @@ class PatchMixerBlock(nn.Module):
         if self.self_attn:
             hidden_state = self.norm_attn(hidden_state + x_attn)
 
-        out = hidden_state + residual
+        if self.resconn:
+            out = hidden_state + residual
+        else:
+            out = hidden_state
         return out
 
 
@@ -757,6 +775,8 @@ class FeatureMixerBlock(nn.Module):
         if config.gated_attn:
             self.gating_block = PatchTSMixerVAEGatedAttention(in_size=config.d_model, out_size=config.d_model)
 
+        self.resconn = config.mixer_resconn
+
     def forward(self, hidden: torch.Tensor):
         """
         Args:
@@ -773,7 +793,10 @@ class FeatureMixerBlock(nn.Module):
         if self.gated_attn:
             hidden = self.gating_block(hidden)
 
-        out = hidden + residual
+        if self.resconn:
+            out = hidden + residual
+        else:
+            out = hidden
         return out
 
 
@@ -907,6 +930,8 @@ class PatchTSMixerVAEDecoder(nn.Module):
         decoder_config.d_model_layerwise_scale = config.decoder_d_model_layerwise_scale
 
         decoder_config.d_model_layerwise = config.decoder_d_model_layerwise
+
+        decoder_config.mixer_resconn = config.decoder_resconn
 
         self.decoder_block = PatchTSMixerVAEBlock(decoder_config)
 
