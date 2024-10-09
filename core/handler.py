@@ -282,19 +282,11 @@ class ModelHandler:
         cnt = 0
         num_proc = max(1,self._num_gpu)
         shower_observables_callbacks = []
-        if len(train_info['plot_config'][0])==3:
-            # from valid dataloader (old dataset 3, not suitable for calochallenge datasets as it is continuous)
-            callback_type = ValidationPlotCallback
-        elif len(train_info['plot_config'][0])==4:
-            # discrete points, for 1M datasets
-            callback_type = ValidationPlotCallbackDiscrete
-        else:
-            raise NotImplementedError
 
         for args in train_info['plot_config']:
             if cnt%num_proc == self._rank:
                 shower_observables_callbacks.append(
-                    callback_type(train_info['plot_freq'], self, *args, valid_data, max_valid_events,_log_to_wandb = self._log_to_wandb)
+                    ValidationPlotCallback(train_info['plot_freq'], self, *args, valid_data, max_valid_events,_log_to_wandb = self._log_to_wandb)
                 )
             cnt += 1
 
@@ -441,113 +433,8 @@ class ModelHandler:
             fname = load_file
         self.load_file = load_file
 
+
 class ValidationPlotCallback:
-    def __init__(self, verbose, handler, angle, energy, geometry, dataloader, max_valid_events=None, _log_to_wandb=False):
-        self.verbose = verbose
-        self.handler = handler
-        self.val_angle = angle
-        self.val_energy = energy
-        self.val_geometry = geometry
-        self.max_events = max_valid_events
-        self._setup(dataloader)
-
-        self._log_to_wandb = _log_to_wandb
-
-    def _setup(self,dataloader):
-
-        num_total_events = len(dataloader.data_cond_e)
-        if self.max_events != None:
-            num_total_events = min(self.max_events,num_total_events)
-
-        energy = dataloader.data_cond_e[:num_total_events]*DataInfo().MAX_ENERGY
-        angle  = dataloader.data_cond_a[:num_total_events]*DataInfo().MAX_ANGLE
-        geo    = dataloader.data_cond_g[:num_total_events]
-        geo    = np.array(['Scipb' if geo[i,0] == 1 else 'SiW' for i in range(len(geo))])
-
-        self.scale_method = dataloader.scale_method
-
-        id_a = angle  == self.val_angle
-        id_e = energy == self.val_energy
-        id_g = geo    == self.val_geometry
-
-        idx = id_a & id_e & id_g
-
-        energy = dataloader.data_energy[:num_total_events]
-        cond_e = dataloader.data_cond_e[:num_total_events]
-        cond_a = dataloader.data_cond_a[:num_total_events]
-        cond_g = dataloader.data_cond_g[:num_total_events]
-
-        self.valid_data = dataloader._torch(energy[idx],cond_e[idx],cond_a[idx],cond_g[idx])
-
-        #delete previous images
-        val_dir = self.handler._val_dir
-        if os.path.exists(val_dir):
-            files = glob.glob(val_dir+'/*.png')
-            for f in files:
-                os.remove(f)
-
-    def __call__(self, epoch):
-        if ((epoch+1) % self.verbose)==0:
-            print(f'{self.handler._rank}:Plotting..')
-
-            self.handler._set_model_inference()
-            with torch.no_grad():
-                x_in = self.handler._to_dev(self.valid_data)
-                generated_events = self.handler.generate(x_in)
-
-            str_out = f'data max {self.valid_data[0].max().item():.3f} and '
-            str_out+= f'data min {self.valid_data[0].min().item():.3f}'
-            print(str_out,flush=True)
-
-            str_out = f'simulation max {generated_events.max().item():.3f} and '
-            str_out+= f'simulation min {generated_events.min().item():.3f}'
-            print(str_out,flush=True)
-
-            showers          = self.valid_data[0].to('cpu').numpy()
-            generated_events =   generated_events.to('cpu').numpy()
-
-            showers          = self.scale_method.inverse_transform(showers,         self.val_energy)
-            generated_events = self.scale_method.inverse_transform(generated_events,self.val_energy)
-
-            val_dir = self.handler._val_dir
-
-            compare_profiles(showers,generated_events,self.val_energy,self.val_angle,self.val_geometry,val_dir)
-
-            observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
-               "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
-            plot_names = [
-               f"{val_dir}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Angle_{self.val_angle}"
-               for metric in observable_names
-            ]
-            if self._log_to_wandb:
-                for file in plot_names:
-                   wandb.log({file: wandb.Image(f"{file}.png")})
-
-            # 3D shower
-            N_CELLS_R   = DataInfo().N_CELLS_R
-            N_CELLS_PHI = DataInfo().N_CELLS_PHI
-            N_CELLS_Z   = DataInfo().N_CELLS_Z
-            shower = generated_events[0].reshape(N_CELLS_R, N_CELLS_PHI, N_CELLS_Z)
-            r, phi, z, inn = np.stack([x.ravel() for x in np.mgrid[:N_CELLS_R, :N_CELLS_PHI, :N_CELLS_Z]] + [shower.ravel(),], axis=1).T
-            phi = phi / phi.max() * 2 * np.pi
-            x = r * np.cos(phi)
-            y = r * np.sin(phi)
-
-            normalize_intensity_by = 30  # knob for transparency
-            trace = go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
-                mode='markers',
-                marker_symbol='square',
-                marker_color=[f"rgba(0,0,255,{i*100//normalize_intensity_by/100})" for i in inn],
-            )
-            go.Figure(trace).write_html(f"{val_dir}/3d_shower.html")
-            if self._log_to_wandb:
-                wandb.log({'shower_{}_{}'.format(self.val_angle, self.val_energy): wandb.Html(f"{val_dir}/3d_shower.html")})
-
-#PLease use this one for dataset 2
-class ValidationPlotCallbackDiscrete:
     def __init__(self, verbose, handler, theta, phi, energy, geometry, dataloader, max_valid_events=None,_log_to_wandb=False):
         self.verbose = verbose
         self.handler = handler
@@ -562,32 +449,41 @@ class ValidationPlotCallbackDiscrete:
 
     def _setup(self,dataloader):
 
-        num_total_events = len(dataloader.data_cond_e)
+        val_geo_index = list(dataloader.data_files.keys()).index(self.val_geometry)
+
+        val_data = dataloader.geo_data[val_geo_index]
+
+        num_total_events = len(val_data['energy'])
         if self.max_events != None:
             num_total_events = min(self.max_events,num_total_events)
 
         self.scale_method = dataloader.scale_method
 
         val_energy = self.scale_method.transform_energy(np.array([self.val_energy,]))
-        val_theta = self.scale_method.transform_theta(np.array([self.val_theta,]))
-        val_phi = self.scale_method.transform_phi(np.array([self.val_phi,]))
-        val_geo = np.array([0, 1] if self.val_geometry=="SiW" else [1, 0])
+        val_theta  = self.scale_method.transform_theta( np.array([self.val_theta, ]))
+        val_phi    = self.scale_method.transform_phi(   np.array([self.val_phi,   ]))
+        val_geo    = np.array(DataInfo().GEO_CODING(self.val_geometry))
 
-        id_e = np.isclose(dataloader.data_cond_e, val_energy)
-        id_t = np.isclose(dataloader.data_cond_theta, val_theta)
-        id_p = np.isclose(dataloader.data_cond_phi, val_phi).sum(axis=-1)==len(val_phi)
-        id_g = np.isclose(dataloader.data_cond_g, val_geo).sum(axis=-1)==len(val_geo)
+        id_e = np.isclose(val_data['energy'], val_energy)
+        id_t = np.isclose(val_data['theta'],  val_theta)
+        id_p = np.isclose(val_data['phi'],    val_phi).sum(axis=-1) == len(val_phi)
+        id_g = np.isclose(val_data['geo'],    val_geo).sum(axis=-1) == len(val_geo)
 
         idx = id_e & id_t & id_p & id_g
-        idx = idx[:num_total_events]
 
-        energy = dataloader.data_energy[idx]
-        cond_e = dataloader.data_cond_e[idx]
-        cond_phi = dataloader.data_cond_phi[idx]
-        cond_theta = dataloader.data_cond_theta[idx]
-        cond_g = dataloader.data_cond_g[idx]
+        geo    = val_data['geo'   ][idx]
+        phi    = val_data['phi'   ][idx]
+        theta  = val_data['theta' ][idx]
+        shower = val_data['shower'][idx]
+        energy = val_data['energy'][idx]
 
-        self.valid_data = dataloader._torch(energy,cond_e,cond_theta,cond_phi,cond_g)
+        geo    = geo   [:num_total_events]
+        phi    = phi   [:num_total_events]
+        theta  = theta [:num_total_events]
+        shower = shower[:num_total_events]
+        energy = energy[:num_total_events]
+
+        self.valid_data = dataloader._torch(shower,energy,theta,phi,geo)
 
         #delete previous images
         val_dir = self.handler._val_dir

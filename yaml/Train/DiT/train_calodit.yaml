@@ -1,0 +1,90 @@
+---
+experiment:
+    study_name: CaloDiT
+    run_name:   foundation_model
+    checkpoint_dir: /dccstor/kyeo_data/cern_fast_shower/chk_point
+    validation_dir: /dccstor/kyeo_data/cern_fast_shower/validation
+    #wandb_entity: foundation-models
+
+gpu_info:
+    use_gpu: True
+    use_ddp: False
+
+model_info:
+    model_type: Diffusion       #generative frameworks: AE,MLE,VAE,GAN,Diffusion
+    network_type: CaloDiT       #types of the neural network: Mixer, MixerTF, PatchTSMixer, MixBeast
+    save_model: True            #save the itermediate models
+    load_file: null             #path and file name of a trained network. 
+    save_file: calodit.pt       #path and file name to save the trained model. 
+                                #If null, the model is saved in chkeckpoint_dir using the default name
+    gen_param:                  #paramters for generative framework
+        diff_model: orig        #'orig' or 'rescaled'
+        res_conn: False          #if True: y = x+f(x)
+        dim_t_emb: 128          #dimension of positional embedding
+        dim_c: 10               #dimension of conditioning variables (incl. geo)
+        beta_info:              #diffusion scheduler info
+            schedule: cos2
+            num_steps: 400
+    network_param: #neural network specific parameter
+        dim_r: 9
+        dim_a: 16
+        dim_v: 45
+        dim_c: 256              #for Diffusion model dim_c should be always 2*dim_t_emb
+        num_enc_layers: 2
+        num_dec_layers: 2
+        embed_dim: 144          #multiple of 3 and num_heads
+        num_heads: 8
+        mlp_ratio: 4
+        patch_size: [3, 2, 3]
+        variational: False      #Use Gaussian latent state or not
+
+train_info:
+    optimizer: Adam
+    epochs: 20000
+    learning_rate: 1.e-3
+    batch_size: 256
+    lr_scheduler:
+        scheduler: scheduled
+        #milestones: [500,1000,1500]
+        milestones: [2000,4000,8000,16000]
+        gamma: 0.5
+    save_freq: 100
+    plot_freq: 20
+    plot_config:
+        - [1.57, 0,  50, 'FCCeeALLEGRO']  #theta, phi, energy, geo
+        - [1.57, 0,  50, 'FCCeeCLD'    ]  
+        - [1.57, 0,  50, 'ODD'         ] 
+        - [1.57, 0,  50, 'Par04_PbWO4' ] 
+        - [1.57, 0,  50, 'Par04_SciPb' ]
+        - [1.57, 0,  50, 'Par04_SiW'   ]
+
+data_info:
+    dataloader: 'shower_FM_dataset'
+
+    train_path: ['/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/FCCeeALLEGRO/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/FCCeeCLD/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/ODD/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_PbWO4/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_SciPb/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_SiW/training']
+
+    valid_path: ['/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/FCCeeALLEGRO/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/FCCeeCLD/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/ODD/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_PbWO4/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_SciPb/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_SiW/validation']
+
+    train_geo:  ['FCCeeALLEGRO','FCCeeCLD','ODD','Par04_PbWO4','Par04_SciPb','Par04_SiW']
+    valid_geo:  ['FCCeeALLEGRO','FCCeeCLD','ODD','Par04_PbWO4','Par04_SciPb','Par04_SiW']
+
+    random_geo_sampling: True
+    num_samples_epoch: 256000
+    
+scale_info:
+    scale_method: 'ds2_log_norm'  #data transformatin: lin_trans, log_trans, or bi-log_trans, ds2_log_norm
+    scale_param:
+        mean: -10.346238
+        std: 3.644565
+        epsilon_logit: 1.e-6
+    scale_by_energy: False

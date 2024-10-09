@@ -108,7 +108,7 @@ class Dataset(Dataset):
         split="train",
         scale_method = None,
         max_num_events = None,
-        max_local_data = 100000,
+        max_local_data = 1000000,
         num_samples_epoch = None,
         random_geo_sampling = False,
         **kwargs
@@ -132,7 +132,7 @@ class Dataset(Dataset):
 
     def __read_data__(self):
 
-        geo_data = []
+        self.geo_data = []
 
         for geo,path in self.data_files.items():
 
@@ -193,48 +193,48 @@ class Dataset(Dataset):
                     h5_showers =         hdf5_file['showers']
                     h5_energy_particle = hdf5_file['incident_energy']
 
-                # events in Num_data x Radial x Azimuthal x Vertical
-                if local_num_data > max_local_data:  #incremental data loading if data size is too big
-                    id0 = 0
-                    for k in range(int(local_num_data/max_local_data)):
-                        
-                        id1 = id0 + max_local_data
+                    # events in Num_data x Radial x Azimuthal x Vertical
+                    if local_num_data > max_local_data:  #incremental data loading if data size is too big
+                        id0 = 0
+                        for k in range(int(local_num_data/max_local_data)):
+                            
+                            id1 = id0 + max_local_data
 
-                        local_energy, local_energy_particle, local_theta, local_phi = self.read_local(id0, id1, h5_showers, h5_energy_particle, h5_theta, h5_phi)
+                            local_energy, local_energy_particle, local_theta, local_phi = self.read_local(id0, id1, h5_showers, h5_energy_particle, h5_theta, h5_phi)
 
-                        id0 = id1
+                            id0 = id1
 
-                        end_idx = start_idx + max_local_data
-                        energies_data[start_idx:end_idx] = local_energy
-                        cond_e_data[start_idx:end_idx] = local_energy_particle
-                        theta_data[start_idx:end_idx] = local_theta
-                        phi_data[start_idx:end_idx] = local_phi
-                        start_idx = end_idx
-                        #print(end_idx)
-                        
-                    if id0 < local_num_data:
+                            end_idx = start_idx + max_local_data
+                            energies_data[start_idx:end_idx] = local_energy
+                            cond_e_data[start_idx:end_idx] = local_energy_particle
+                            theta_data[start_idx:end_idx] = local_theta
+                            phi_data[start_idx:end_idx] = local_phi
+                            start_idx = end_idx
+                            #print(end_idx)
+                            
+                        if id0 < local_num_data:
 
-                        id1 = local_num_data
+                            id1 = local_num_data
 
-                        local_energy, local_energy_particle, local_theta, local_phi = self.read_local(id0, id1, h5_showers, h5_energy_particle, h5_theta, h5_phi)
+                            local_energy, local_energy_particle, local_theta, local_phi = self.read_local(id0, id1, h5_showers, h5_energy_particle, h5_theta, h5_phi)
 
-                        end_idx = start_idx + (local_num_data-id0)
-                        energies_data[start_idx:end_idx] = local_energy
-                        cond_e_data[start_idx:end_idx] = local_energy_particle
-                        theta_data[start_idx:end_idx] = local_theta
-                        phi_data[start_idx:end_idx] = local_phi
-                        start_idx = end_idx
-                        #print(end_idx)
-                else:
+                            end_idx = start_idx + (local_num_data-id0)
+                            energies_data[start_idx:end_idx] = local_energy
+                            cond_e_data[start_idx:end_idx] = local_energy_particle
+                            theta_data[start_idx:end_idx] = local_theta
+                            phi_data[start_idx:end_idx] = local_phi
+                            start_idx = end_idx
+                            #print(end_idx)
+                    else:
 
-                    local_energy, local_energy_particle, local_theta, local_phi = self.read_local(0, local_num_data, h5_showers, h5_energy_particle, h5_theta, h5_phi)
+                        local_energy, local_energy_particle, local_theta, local_phi = self.read_local(0, local_num_data, h5_showers, h5_energy_particle, h5_theta, h5_phi)
 
-                    end_idx = start_idx + local_num_data
-                    energies_data[start_idx:end_idx] = local_energy
-                    cond_e_data[start_idx:end_idx] = local_energy_particle
-                    theta_data[start_idx:end_idx] = local_theta
-                    phi_data[start_idx:end_idx] = local_phi
-                    start_idx = end_idx
+                end_idx = start_idx + local_num_data
+                energies_data[start_idx:end_idx] = local_energy
+                cond_e_data[start_idx:end_idx] = local_energy_particle
+                theta_data[start_idx:end_idx] = local_theta
+                phi_data[start_idx:end_idx] = local_phi
+                start_idx = end_idx
                     
                 #print('data retrieval time:',time.time()-t0)
 
@@ -250,9 +250,7 @@ class Dataset(Dataset):
             data['phi']    = torch.from_numpy(phi_data)
             data['geo']    = torch.from_numpy(cond_geo_data)
 
-            geo_data += [data]
-
-        self.geo_data = geo_data
+            self.geo_data += [data]
 
     def __getitem__(self, index):
 
@@ -263,18 +261,22 @@ class Dataset(Dataset):
 
         out_data = self.geo_data[geo_id]
 
-        return self._torch(out_data['shower'][index],
-                           out_data['energy'][index:index+1],
-                           out_data['theta' ][index:index+1],
-                           out_data['phi'   ][index],
-                           out_data['geo'   ][index]),        \
-               self._torch(out_data['shower'][index])[0]
+        #random sampling
+        rand_idx = torch.randint(len(out_data['shower']),(1,)).item()
+
+        return self._torch(out_data['shower'][rand_idx],
+                           out_data['energy'][rand_idx:rand_idx+1],
+                           out_data['theta' ][rand_idx:rand_idx+1],
+                           out_data['phi'   ][rand_idx],
+                           out_data['geo'   ][rand_idx]),        \
+               self._torch(out_data['shower'][rand_idx])[0]
 
     def __len__(self):
         if self.num_samples_epoch == None:
             n_samples = 0
             for i in range(len(self.geo_data)):
-                self.num_samples_epoch = max(n_samples,self.geo_data[i]['shower'].size(0))
+                n_samples += len(self.geo_data[i]['energy'])
+            self.num_samples_epoch = n_samples
             print(f'number of samples per epoch is {self.num_samples_epoch}')
         return self.num_samples_epoch
 

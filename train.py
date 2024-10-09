@@ -76,7 +76,15 @@ def main():
 
     print('Start Loading data')
     Data = DataInfo(data_info['dataloader'])
+
+    #training data
+    data_info['data_path'] = data_info['train_path']
+    data_info['geo'      ] = data_info['train_geo' ]
     train_data = Data.get_dataset(**data_info,split='train',scale_method=scale_method)
+
+    #validation data
+    data_info['data_path'] = data_info['valid_path']
+    data_info['geo'      ] = data_info['valid_geo' ]
     valid_data = Data.get_dataset(**data_info,split='val'  ,scale_method=scale_method)
     print('End Loading data')
 
