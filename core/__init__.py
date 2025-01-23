@@ -10,4 +10,3 @@ from core.layers.Mixer import Mixer
 from core.layers.MixerTF import MixerTF
 from core.layers.hf_PatchTSMixer import PatchTSMixer
 from core.layers.calodit import CaloDiT
-from core.layers.hf_TSMixBeast import TSMixBeast
