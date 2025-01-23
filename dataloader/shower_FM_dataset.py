@@ -252,6 +252,8 @@ class Dataset(Dataset):
 
             self.geo_data += [data]
 
+            print(f'finish reading {geo}',flush=True)
+
     def __getitem__(self, index):
 
         if self.random_geo_sampling:
