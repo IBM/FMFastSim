@@ -22,7 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from core.layers.layer import layer
-from core.layers.patchtsmixervae import PatchTSMixerVAEConfig,PatchTSMixerVAEDecoderWithReconstructionHead,PatchTSMixerVAEModel
+from core.layers.patchtsmixervae import PatchTSMixerVAEConfig,PatchTSMixerVAEDecoderWithReconstructionHead,PatchTSMixerVAEModel, PatchTSMixerVAEDecoder
 
 import einops
 
@@ -104,7 +104,9 @@ class PatchTSMixer(layer):
 
         self.enc_dim = [length_dim[first_dim],length_dim[second_dim],length_dim[third_dim]]
         self.enc_arrange = f'b r a v -> b ({first_dim} {second_dim}) {third_dim}'
-        self.dec_arrange = f'b {first_dim} {second_dim} {third_dim} -> b r a v'
+        self.dec_arrange = f'b {third_dim} {first_dim} {second_dim} -> b r a v'
+
+        #self.dec_arrange = f'b {first_dim} {second_dim} {third_dim} -> b r a v'
 
         self.lower_bound = lower_bound
         self.variational = variational
@@ -147,8 +149,11 @@ class PatchTSMixer(layer):
 
         config.check_and_init_preprocessing()
 
+        self.config = config
+
         self.encoder = PatchTSMixerVAEModel(config)
-        self.decoder = PatchTSMixerVAEDecoderWithReconstructionHead(config)
+        self.decoder = PatchTSMixerVAEDecoder(config)
+        #self.decoder = PatchTSMixerVAEDecoderWithReconstructionHead(config)
 
         test_data = torch.rand(1,context_length,num_input_channels)
         enc_out   = self.encoder(test_data)
@@ -213,14 +218,17 @@ class PatchTSMixer(layer):
 
             z_in = c0 + z_in*(c1+1)
 
-        dec_out = self.decoder(decoder_input=z_in)
+        z_in = z_in.reshape(-1,self.config.num_input_channels,
+                               self.config.num_patches,
+                               self.config.d_model_layerwise[-1])
+        dec_out = self.decoder(hidden_state=z_in)
+        x0 = dec_out[0]*self.output_scale + self.output_bias
 
-        x0 = dec_out.reconstruction_outputs*self.output_scale + self.output_bias
-        #x0 is in dimension Batch x (Radial x Vertical) x Azimuthal
-
-        nb = x0.size(0)
-        nc = x0.size(-1)
-        x0 = x0.reshape(nb,self.enc_dim[0],self.enc_dim[1],self.enc_dim[2])
+        #dec_out = self.decoder(decoder_input=z_in)
+        #x0 = dec_out.reconstruction_outputs*self.output_scale + self.output_bias
+        #nb = x0.size(0)
+        #nc = x0.size(-1)
+        #x0 = x0.reshape(nb,self.enc_dim[0],self.enc_dim[1],self.enc_dim[2])
   
         x0 = einops.rearrange(x0,self.dec_arrange)
 
