@@ -227,7 +227,7 @@ class MixerTF_Core(nn.Module):
         return z0
 
 class Cond_Net(nn.Module):
-    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,res_conn=True,gated_attn=False):
+    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,res_conn=False,gated_attn=False):
         super().__init__()
 
         self.dim_x0 = dim_x0
@@ -238,8 +238,10 @@ class Cond_Net(nn.Module):
 
         d_model = dim_x0[0]*dim_x1[0]*dim_x2[0]
 
-        self.linear_pos   = nn.Sequential(nn.Linear(dim_c,32),nn.SiLU(),nn.Linear(32,d_model))
-        self.linear_scale = nn.Sequential(nn.Linear(dim_c,32),nn.SiLU(),nn.Linear(32,d_model))
+        self.linear_pos   = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(), 
+                                          nn.Linear(  128,128),nn.SiLU(),nn.Linear(128,d_model))
+        self.linear_scale = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(), 
+                                          nn.Linear(  128,128),nn.SiLU(),nn.Linear(128,d_model))
 
         module = []
         for i in range(len(dim_x0)-1):

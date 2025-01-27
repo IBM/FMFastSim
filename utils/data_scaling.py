@@ -125,7 +125,7 @@ class log_trans:
 
 #lin_trans => y = (x+bias)/scale
 class lin_trans:
-    def __init__(self,scale=1,bias=1,**kwargs):
+    def __init__(self,scale=1,bias=0,**kwargs):
         self.name='linear transform'
 
         self.bias  = bias

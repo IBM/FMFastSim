@@ -50,23 +50,26 @@ class PatchTSMixer(layer):
         channel_dim        = 'r',
         patch_dim          = 'v',
         expansion_factor   = 2,
-        num_layers         = 4,
         dropout            = 0.2,
-        mode               = "mix_channel",  # either common_channel,  mix_channel
-        gated_attn         = True,
         norm_mlp           = "LayerNorm",
         head_dropout       = 0.2,
         scaling            = "none",
-        use_positional_encoding=False,
-        positional_encoding_type='random',
-        self_attn           = False,
-        self_attn_heads     = 1,
+        d_model            = None,
+        decoder_d_model    = None,
+        #attention modules
+        gated_attn         = False,
+        self_attn          = False,
+        self_attn_heads    = 1,
+        #number of layers
+        num_layers          = 4,
         decoder_num_layers  = 4,
-        decoder_mode        = "mix_channel",
         #encoder compression
-        d_model_layerwise_scale             = [1, 0.75, 0.5, 0.5],
+        d_model_layerwise_scale         = [1, 0.75, 0.5, 0.5],
         #decoder decompression
-        decoder_d_model_layerwise_scale     = [0.5, 0.5, 0.75, 1],
+        decoder_d_model_layerwise_scale = [0.5, 0.5, 0.75, 1],
+        #positional encoding
+        use_positional_encoding=False,
+        positional_encoding_type='sincos',
         #residual connection
         encoder_resconn = True,
         decoder_resconn = True,
@@ -109,6 +112,11 @@ class PatchTSMixer(layer):
         self.output_scale = output_scale
         self.output_bias  = output_bias
 
+        if d_model == None:
+            d_model = patch_length
+        if decoder_d_model == None:
+            decoder_d_model = patch_length
+
         config = PatchTSMixerVAEConfig(
             context_length=context_length,
             patch_length=patch_length,
@@ -117,20 +125,21 @@ class PatchTSMixer(layer):
             expansion_factor=expansion_factor,
             num_layers=num_layers,
             dropout=dropout,
-            mode=mode,
+            mode='mix_channel',
             gated_attn=gated_attn,
             norm_mlp=norm_mlp,
             head_dropout=head_dropout,
             scaling="none", #scaling is not appplied outside of the model
             use_positional_encoding=use_positional_encoding,
+            positional_encoding_type="sincos",
             self_attn=self_attn,
             self_attn_heads=self_attn_heads,
             decoder_num_layers=decoder_num_layers,
-            decoder_mode=decoder_mode,
+            decoder_mode='mix_channel',
             d_model_layerwise_scale        =        d_model_layerwise_scale,
             decoder_d_model_layerwise_scale=decoder_d_model_layerwise_scale,
-            d_model        =patch_length,  #d_model is set to patch_length
-            decoder_d_model=patch_length,  #d_model is set to patch_length
+            d_model        =        d_model,
+            decoder_d_model=decoder_d_model,
             encoder_resconn=encoder_resconn,
             decoder_resconn=decoder_resconn,
             variational=variational,
@@ -150,23 +159,23 @@ class PatchTSMixer(layer):
         self.decoder_input = torch.zeros(1,dec_emb_size)
 
         self.dec_pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                         nn.LayerNorm(128),
                                          nn.Linear(128,128),nn.SiLU(),
-                                         #nn.LayerNorm(128),
                                          nn.Linear(128,dec_emb_size))
 
         self.dec_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                           nn.LayerNorm(128),
                                            nn.Linear(128,128),nn.SiLU(),
-                                           #nn.LayerNorm(128),
                                            nn.Linear(128,dec_emb_size))
 
         self.enc_pos_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                         nn.LayerNorm(128),
                                          nn.Linear(128,128),nn.SiLU(),
-                                         #nn.LayerNorm(128),
                                          nn.Linear(128,enc_emb_size))
 
         self.enc_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                           nn.LayerNorm(128),
                                            nn.Linear(128,128),nn.SiLU(),
-                                           #nn.LayerNorm(128),
                                            nn.Linear(128,enc_emb_size))
 
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical

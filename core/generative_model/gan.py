@@ -55,7 +55,7 @@ class GAN(nn.Module):
         else:
             raise ValueError
 
-        if cr_gan:
+        if cr_gan > 0:
             print('CR-GAN')
 
         self.g_net_substep = g_net_substep
@@ -103,8 +103,8 @@ class GAN(nn.Module):
             d_fake = self.d_net(x_out  ,cond_var)
 
             if self.gan == 'gan':
-                d_true = d_true*0.98+0.01
-                d_fake = d_fake*0.98+0.01
+                d_true = d_true*0.998+0.001
+                d_fake = d_fake*0.998+0.001
                 d_score = -(d_true.log().mean()+d_fake.mul(-1).add(1).log().mean())
             elif self.gan == 'wgan':
                 d_score = -(d_true - d_fake).mean()
@@ -190,7 +190,8 @@ class D_Net(nn.Module):
                                 dim_c  = dim_c,   \
                                 mlp_ratio  = mlp_ratio,  \
                                 mlp_layers = mlp_layers, \
-                                activation = activation)
+                                activation = activation, \
+                                res_conn = True)
 
         d_model = dim_v[-1]*dim_r[-1]*dim_a[-1]
 
@@ -212,15 +213,16 @@ class D_Net(nn.Module):
                                       dim_c  = dim_c,   \
                                       mlp_ratio  = mlp_ratio,  \
                                       mlp_layers = mlp_layers, \
-                                      activation = activation)
+                                      activation = activation, \
+                                      res_conn = True)
             d_model = d_model + dim_v[-1]*dim_r[-1]*dim_a[-1]
         else:
             self.highpass = None
             self.logtrans = None
 
-        self.d_score = nn.Sequential(nn.Linear(d_model,256),nn.SiLU(),
-                                     nn.Linear(    256,256),nn.SiLU(),
-                                     nn.Linear(    256,  1))
+        self.d_score = nn.Sequential(nn.Linear(d_model,128),nn.SiLU(),
+                                     nn.Linear(    128,128),nn.SiLU(),
+                                     nn.Linear(    128,  1))
         if gan_model == 'gan':
             self.d_score.add_module('scale',nn.Sigmoid())
         #self.d_score .apply(lambda m: init_weights(m,gain=1.4))
@@ -332,7 +334,7 @@ class D_Net(nn.Module):
                 all_reduce(p.data_scale)
 
 class DNet_Core(nn.Module):
-    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,mlp_ratio,mlp_layers,activation=nn.SiLU):
+    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,mlp_ratio,mlp_layers,activation=nn.SiLU,res_conn=True):
         super().__init__()
 
         module = []
@@ -344,18 +346,17 @@ class DNet_Core(nn.Module):
                                mlp_ratio  = mlp_ratio,    
                                activation = activation,   
                                mlp_layers = mlp_layers,
-                               res_conn   = False)]
+                               res_conn   = res_conn)]
 
-            cond_x0 = [8,16,dim_x0[i]]
-            cond_x1 = [8,16,dim_x1[i]]
-            cond_x2 = [8,16,dim_x2[i]]
-            cond_net += [Cond_Net(cond_x0,cond_x1,cond_x2,dim_c)]
+        cond_x0 = [8,16,dim_x0[0]]
+        cond_x1 = [8,16,dim_x1[0]]
+        cond_x2 = [8,16,dim_x2[0]]
+        self.cond_net = Cond_Net(cond_x0,cond_x1,cond_x2,dim_c)
 
         self.module   = nn.ModuleList(module)
-        self.cond_net = nn.ModuleList(cond_net)
 
         #self.module  .apply(lambda m: init_weights(m,gain=1.0))
-        self.cond_net.apply(lambda m: init_weights(m,gain=1.4))
+        #self.cond_net.apply(lambda m: init_weights(m,gain=1.4))
 
         #self.norm = nn.LayerNorm([dim_x0[0],dim_x1[0],dim_x2[0]])
 
@@ -364,10 +365,10 @@ class DNet_Core(nn.Module):
 
         z0 = x_in
         #z0 = self.norm(x_in)
+        pos_emb,scale_emb = self.cond_net(c_in)
+        z0 = pos_emb + z0*(scale_emb+1)
         for i in range(len(self.module)):
-            pos_emb,scale_emb = self.cond_net[i](c_in)
-            shift = pos_emb + z0*scale_emb
-            z0    = self.module[i](z0,shift)
+            z0 = self.module[i](z0)
 
         return z0
 
@@ -388,30 +389,30 @@ class CR_D_Net(nn.Module):
         #self.norm = nn.BatchNorm1d(dim_x,affine=False)
         #self.norm = nn.LayerNorm(dim_x)
 
-        self.core = nn.Sequential(nn.Conv1d(in_channels=1,out_channels=4,kernel_size=5),activation(),
-                                  nn.Conv1d(in_channels=4,out_channels=4,kernel_size=5),activation(),
-                                  nn.Conv1d(in_channels=4,out_channels=4,kernel_size=5),activation())
-        self.enc  = nn.Linear((dim_x-4*3)*4,64)
+        self.core = nn.Sequential(nn.Conv1d(in_channels=1,out_channels=8,kernel_size=2),activation(),
+                                  nn.Conv1d(in_channels=8,out_channels=8,kernel_size=2),activation(),
+                                  nn.Conv1d(in_channels=8,out_channels=4,kernel_size=2),activation())
+        self.enc  = nn.Linear((dim_x-1*3)*4,64)
 
-        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,64),activation(),
-                                       nn.Linear(   64,64),activation(),
-                                       nn.Linear(   64,64))
+        self.pos_emb   = nn.Sequential(nn.Linear(dim_c, 64),activation(),
+                                       nn.Linear(   64,128),activation(),
+                                       nn.Linear(  128, 64))
 
-        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
-                                       nn.Linear(   64,64),activation(),
-                                       nn.Linear(   64,64))
+        self.scale_emb = nn.Sequential(nn.Linear(dim_c, 64),activation(),
+                                       nn.Linear(   64,128),activation(),
+                                       nn.Linear(  128, 64))
 
-        self.score= nn.Sequential(nn.LayerNorm(64),
-                                  nn.Linear(64,64),activation(),
-                                  nn.Linear(64,64),activation(),
-                                  nn.Linear(64, 1))
+        self.score= nn.Sequential(#nn.LayerNorm(64),
+                                  nn.Linear( 64,128),activation(),
+                                  nn.Linear(128,128),activation(),
+                                  nn.Linear(128,  1))
 
         if gan_model == 'gan':
             self.score.add_module('scale',nn.Sigmoid())
 
         #self.core .apply(lambda m: init_weights(m,gain=1.0))
-        self.pos_emb  .apply(lambda m: init_weights(m,gain=1.4))
-        self.scale_emb.apply(lambda m: init_weights(m,gain=1.4))
+        #self.pos_emb  .apply(lambda m: init_weights(m,gain=1.4))
+        #self.scale_emb.apply(lambda m: init_weights(m,gain=1.4))
 
     def forward(self,x_in,c_in):
         x0  = self.scale_data(x_in)

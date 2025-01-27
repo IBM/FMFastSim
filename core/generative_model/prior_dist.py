@@ -22,16 +22,14 @@ class prior_dist(nn.Module):
     def __init__(self,dist_type='normal',dim_tensor=None):
         super().__init__()
 
-        if dist_type == 'normal':
-            self.prior_dist = Normal(dim_tensor)
+        if dist_type == 'std':
+            self.prior_dist = Std_Normal(dim_tensor)
         elif dist_type == 'lognormal':
             self.prior_dist = LogNormal(dim_tensor)
         elif dist_type == 'laplace':
             self.prior_dist = Laplace(dim_tensor)
         elif dist_type == 'gamma':
             self.prior_dist = Gamma(dim_tensor)
-        elif dist_type == 'std':
-            self.prior_dist = Std_Normal(dim_tensor)
         else:
             raise ValueError
 
@@ -53,12 +51,12 @@ class Std_Normal(nn.Module):
         return x_out
 
 class Normal(nn.Module):
-    def __init__(self,dim_tensor=None):
+    def __init__(self,dim_tensor=None,learnable=False):
         super().__init__()
 
         self.name = 'Normal'
-        self.param_a = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=True))
-        self.param_b = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=True))
+        self.param_a = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=False))
+        self.param_b = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=False))
 
         self.dist = distributions.Normal
 
@@ -71,12 +69,12 @@ class Normal(nn.Module):
         return x_out
 
 class LogNormal(nn.Module):
-    def __init__(self,dim_tensor=None):
+    def __init__(self,dim_tensor=None,learnable=False):
         super().__init__()
 
         self.name = 'LogNormal'
-        self.param_a = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=True))
-        self.param_b = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=True))
+        self.param_a = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=False))
+        self.param_b = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=False))
 
         self.dist = distributions.LogNormal
 
@@ -89,12 +87,12 @@ class LogNormal(nn.Module):
         return x_out
 
 class Laplace(nn.Module):
-    def __init__(self,dim_tensor=None):
+    def __init__(self,dim_tensor=None,learnable=False):
         super().__init__()
 
         self.name = 'Laplace'
-        self.param_a = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=True))
-        self.param_b = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=True))
+        self.param_a = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=False))
+        self.param_b = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=False))
 
         self.dist = distributions.Laplace
 
@@ -107,12 +105,12 @@ class Laplace(nn.Module):
         return x_out
 
 class Gamma(nn.Module):
-    def __init__(self,dim_tensor=None):
+    def __init__(self,dim_tensor=None,learnable=False):
         super().__init__()
 
         self.name = 'Gamma'
-        self.param_a = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=True))
-        self.param_b = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=True))
+        self.param_a = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=False))
+        self.param_b = nn.Parameter(torch.zeros_like(dim_tensor,requires_grad=False))
 
         self.dist = distributions.Gamma
 
