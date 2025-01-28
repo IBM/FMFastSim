@@ -268,7 +268,7 @@ class D_Net(nn.Module):
             z0 = torch.cat([z0,z1],dim=1)
 
         if self.logtrans!= None:
-            x0 = (x_in.add(1.e-3).log()-np.log(1.e-3))
+            x0 = (x_in.add(1.e-5).log()-np.log(1.e-5))
             z1 = self.logtrans(x0,c_in).reshape(nb,-1)
             z0 = torch.cat([z0,z1],dim=1)
 
@@ -386,21 +386,18 @@ class CR_D_Net(nn.Module):
         #                          nn.Linear(dim_x,128),activation(),
         #                          nn.Linear(  128, 32))
 
-        #self.norm = nn.BatchNorm1d(dim_x,affine=False)
-        #self.norm = nn.LayerNorm(dim_x)
+        self.core = nn.Sequential(nn.Conv1d(in_channels= 1,out_channels= 8,kernel_size=2),activation(),
+                                  nn.Conv1d(in_channels= 8,out_channels=16,kernel_size=2),activation(),
+                                  nn.Conv1d(in_channels=16,out_channels=16,kernel_size=2),activation())
+        self.enc  = nn.Linear((dim_x-1*3)*16,64)
 
-        self.core = nn.Sequential(nn.Conv1d(in_channels=1,out_channels=8,kernel_size=2),activation(),
-                                  nn.Conv1d(in_channels=8,out_channels=8,kernel_size=2),activation(),
-                                  nn.Conv1d(in_channels=8,out_channels=4,kernel_size=2),activation())
-        self.enc  = nn.Linear((dim_x-1*3)*4,64)
+        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,64),activation(),nn.LayerNorm(64),
+                                       nn.Linear(   64,64),activation(),
+                                       nn.Linear(   64,64))
 
-        self.pos_emb   = nn.Sequential(nn.Linear(dim_c, 64),activation(),
-                                       nn.Linear(   64,128),activation(),
-                                       nn.Linear(  128, 64))
-
-        self.scale_emb = nn.Sequential(nn.Linear(dim_c, 64),activation(),
-                                       nn.Linear(   64,128),activation(),
-                                       nn.Linear(  128, 64))
+        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),nn.LayerNorm(64),
+                                       nn.Linear(   64,64),activation(),
+                                       nn.Linear(   64,64))
 
         self.score= nn.Sequential(#nn.LayerNorm(64),
                                   nn.Linear( 64,128),activation(),
@@ -429,7 +426,6 @@ class CR_D_Net(nn.Module):
         pos_emb   = self.pos_emb(c_in)
         scale_emb = self.scale_emb(c_in)
 
-        #z0 = self.norm(x_in)
         z0 = x_in/self.data_scale
         z1 = self.core(z0.unsqueeze(1))
         z2 = self.enc (z1.view(nb,-1))
@@ -455,12 +451,22 @@ class Total_E_D_Net(nn.Module):
 
         self.data_scale =  0
         
-        d0 = dim_c+1
-        self.score= nn.Sequential(nn.Linear( d0,128),activation(),
+        self.enc = nn.Sequential(nn.Linear( 1,64),activation(),
+                                 nn.Linear(64,64),activation(),
+                                 nn.Linear(64,64))
+
+        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,64),activation(),nn.LayerNorm(64),
+                                       nn.Linear(   64,64),activation(),
+                                       nn.Linear(   64,64))
+
+        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),nn.LayerNorm(64),
+                                       nn.Linear(   64,64),activation(),
+                                       nn.Linear(   64,64))
+
+        self.score= nn.Sequential(#nn.LayerNorm(64),
+                                  nn.Linear( 64,128),activation(),
                                   nn.Linear(128,128),activation(),
                                   nn.Linear(128,  1))
-
-        #self.norm = nn.BatchNorm1d(d0,affine=False)
 
         if gan_model == 'gan':
             self.score.add_module('scale',nn.Sigmoid())
@@ -477,10 +483,17 @@ class Total_E_D_Net(nn.Module):
         return out
 
     def get_score(self,x_in,c_in):
-        x0  = x_in/self.data_scale
-        x0  = torch.cat([x0,c_in],dim=1)
-        #x0  = self.norm (x0)
-        out = self.score(x0)
+        nb = x_in.size(0)
+
+        pos_emb   = self.pos_emb(c_in)
+        scale_emb = self.scale_emb(c_in)
+
+        z0 = x_in/self.data_scale
+        z1 = self.enc(z0.view(nb,-1))
+
+        z2 = pos_emb+z1*(scale_emb+1)
+
+        out = self.score(z2)
         return out
 
     @torch.no_grad()

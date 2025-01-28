@@ -1234,7 +1234,10 @@ class PatchTSMixerVAEEncoder(PatchTSMixerVAEPreTrainedModel):
         super().__init__(config)
         self.use_return_dict = config.use_return_dict
 
-        self.patcher = nn.Linear(config.patch_length, config.d_model)
+        if config.patch_length == config.d_model:
+            self.patcher = None
+        else:
+            self.patcher = nn.Linear(config.patch_length, config.d_model)
         if config.use_positional_encoding:
             self.positional_encoder = PatchTSMixerVAEPositionalEncoding(config=config)
         else:
@@ -1273,7 +1276,10 @@ class PatchTSMixerVAEEncoder(PatchTSMixerVAEPreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.use_return_dict
 
         # flatten [bs x num_patch x d_model]. common_channel/mix_channel: [bs x n_vars x num_patch x d_model]
-        patches = self.patcher(past_values)
+        if self.patcher:
+            patches = self.patcher(past_values)
+        else:
+            patches = past_values
 
         # add positional encoder
         if self.positional_encoder is not None:
