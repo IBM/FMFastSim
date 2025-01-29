@@ -268,7 +268,7 @@ class D_Net(nn.Module):
             z0 = torch.cat([z0,z1],dim=1)
 
         if self.logtrans!= None:
-            x0 = (x_in.add(1.e-5).log()-np.log(1.e-5))
+            x0 = (x_in.add(1.e-2).log()-np.log(1.e-2))
             z1 = self.logtrans(x0,c_in).reshape(nb,-1)
             z0 = torch.cat([z0,z1],dim=1)
 
@@ -391,11 +391,13 @@ class CR_D_Net(nn.Module):
                                   nn.Conv1d(in_channels=16,out_channels=16,kernel_size=2),activation())
         self.enc  = nn.Linear((dim_x-1*3)*16,64)
 
-        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,64),activation(),nn.LayerNorm(64),
+        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                       nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                        nn.Linear(   64,64),activation(),
                                        nn.Linear(   64,64))
 
-        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),nn.LayerNorm(64),
+        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                       nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                        nn.Linear(   64,64),activation(),
                                        nn.Linear(   64,64))
 
@@ -455,11 +457,13 @@ class Total_E_D_Net(nn.Module):
                                  nn.Linear(64,64),activation(),
                                  nn.Linear(64,64))
 
-        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,64),activation(),nn.LayerNorm(64),
+        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                       nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                        nn.Linear(   64,64),activation(),
                                        nn.Linear(   64,64))
 
-        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),nn.LayerNorm(64),
+        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                       nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                        nn.Linear(   64,64),activation(),
                                        nn.Linear(   64,64))
 

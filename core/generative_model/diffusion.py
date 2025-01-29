@@ -84,10 +84,10 @@ class Diffusion(nn.Module):
 
         dim_t = dim_t_emb
         self.time_emb = nn.Sequential(Position_Embeddings(dim_t),
-                                      nn.Linear(dim_t,  128),nn.SiLU(),nn.LayerNorm(128),
+                                      nn.Linear(dim_t,  128),nn.SiLU(), #nn.LayerNorm(128),
                                       nn.Linear(128  ,dim_t))
 
-        self.cond_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),nn.LayerNorm(128),
+        self.cond_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(), #nn.LayerNorm(128),
                                       nn.Linear(128  ,dim_t))
 
         self.loss_counter = -1
