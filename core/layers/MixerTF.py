@@ -19,7 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from core.layers.layer import layer
-from core.layers.lib_mixer import Mixer2D, Mixer3D, MixerTF_Block,init_weights
+from core.layers.lib_mixer import Mixer2D, Mixer3D, MixerTF_Block,Cond_Net,init_weights
 
 #
 # Mixer Transformer
@@ -225,66 +225,3 @@ class MixerTF_Core(nn.Module):
             z0 = self.decoder(z0)
 
         return z0
-
-class Cond_Net(nn.Module):
-    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,res_conn=False,gated_attn=False):
-        super().__init__()
-
-        self.dim_x0 = dim_x0
-        self.dim_x1 = dim_x1
-        self.dim_x2 = dim_x2
-
-        self.dim_c = dim_c
-
-        d_model = dim_x0[0]*dim_x1[0]*dim_x2[0]
-
-        self.linear_pos   = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(), 
-                                          nn.Linear(  128,128),nn.SiLU(),nn.Linear(128,d_model))
-        self.linear_scale = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(), 
-                                          nn.Linear(  128,128),nn.SiLU(),nn.Linear(128,d_model))
-
-        module = []
-        for i in range(len(dim_x0)-1):
-            module += [Mixer3D(dim_x0 = dim_x0[i:i+2],
-                               dim_x1 = dim_x1[i:i+2],
-                               dim_x2 = dim_x2[i:i+2],
-                               mlp_ratio  = 4,
-                               mlp_layers = 2,
-                               activation=nn.SiLU,
-                               gated_attn=gated_attn,
-                               res_conn=res_conn)]
-
-        self.pos_mixer = nn.ModuleList(module)
-
-        module = []
-        for i in range(len(dim_x0)-1):
-            module += [Mixer3D(dim_x0 = dim_x0[i:i+2],
-                               dim_x1 = dim_x1[i:i+2],
-                               dim_x2 = dim_x2[i:i+2],
-                               mlp_ratio  = 4,
-                               mlp_layers = 2,
-                               activation=nn.SiLU,
-                               gated_attn=gated_attn,
-                               res_conn=res_conn)]
-
-        self.scale_mixer = nn.ModuleList(module)
-
-    def forward(self,c_in,scale=True):
-        nb    = c_in.size(0)
-
-        d0 = self.dim_x0[0]
-        d1 = self.dim_x1[0]
-        d2 = self.dim_x2[0]
-
-        pos_emb = self.linear_pos(c_in).view(nb,d0,d1,d2)
-        for i in range(len(self.pos_mixer)):
-            pos_emb = self.pos_mixer[i](pos_emb)
-
-        if scale:
-            scale_emb = self.linear_scale(c_in).view(nb,d0,d1,d2)
-            for i in range(len(self.pos_mixer)):
-                scale_emb = self.scale_mixer[i](scale_emb)
-
-            return pos_emb, scale_emb
-        else:
-            return pos_emb

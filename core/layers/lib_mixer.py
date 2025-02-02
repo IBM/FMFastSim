@@ -228,6 +228,81 @@ class MixerTF_Block(nn.Module):
 
         return z3
 
+
+###########################################################
+#   Mixer to deal with conditioning variable
+###########################################################
+class Cond_Net(nn.Module):
+    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,res_conn=True,gated_attn=False,pos=True,mode='both'):
+        super().__init__()
+
+        self.dim_x0 = dim_x0
+        self.dim_x1 = dim_x1
+        self.dim_x2 = dim_x2
+
+        self.dim_c = dim_c
+
+        self.mode = mode
+
+        d_model = dim_x0[0]*dim_x1[0]*dim_x2[0]
+
+        self.embedding = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+                                       nn.LayerNorm(128,elementwise_affine=False, bias=False),
+                                       nn.Linear(128,128),nn.SiLU(),
+                                       nn.Linear(128,d_model))
+
+        self.  pos_mixer = None
+        self.scale_mixer = None
+
+        if (self.mode=='both') or (self.mode=='pos'):
+            module = []
+            for i in range(len(dim_x0)-1):
+                module += [Mixer3D(dim_x0 = dim_x0[i:i+2],
+                                   dim_x1 = dim_x1[i:i+2],
+                                   dim_x2 = dim_x2[i:i+2],
+                                   mlp_ratio  = 3,
+                                   mlp_layers = 3,
+                                   activation=nn.SiLU,
+                                   gated_attn=gated_attn,
+                                   res_conn=res_conn)]
+
+            self.pos_mixer = nn.Sequential(*module)
+
+        if (self.mode=='both') or (self.mode=='scale'):
+            module = []
+            for i in range(len(dim_x0)-1):
+                module += [Mixer3D(dim_x0 = dim_x0[i:i+2],
+                                   dim_x1 = dim_x1[i:i+2],
+                                   dim_x2 = dim_x2[i:i+2],
+                                   mlp_ratio  = 3,
+                                   mlp_layers = 3,
+                                   activation=nn.SiLU,
+                                   gated_attn=gated_attn,
+                                   res_conn=res_conn)]
+
+            self.scale_mixer = nn.Sequential(*module)
+
+    def forward(self,c_in,scale=True):
+        nb    = c_in.size(0)
+
+        d0 = self.dim_x0[0]
+        d1 = self.dim_x1[0]
+        d2 = self.dim_x2[0]
+
+        emb = self.embedding(c_in).view(nb,d0,d1,d2)
+
+        if self.pos_mixer:
+            pos_emb = self.pos_mixer(emb)
+
+        if self.scale_mixer:
+            scale_emb = self.scale_mixer(emb)
+
+        if self.mode == 'both':
+            return pos_emb, scale_emb
+        else:
+            out = pos_emb if self.mode == 'pos' else scale_emb
+            return out
+
 #####################
 #   Utility layers
 #####################
@@ -236,7 +311,7 @@ class Adapter(nn.Module):
         super().__init__()
 
         if x_in != x_out:
-            self.map = nn.Linear(x_in,x_out,bias=False)
+            self.map = nn.Linear(x_in,x_out)
         else:
             self.map = nn.Identity()
     def forward(self,x_in):
@@ -272,7 +347,7 @@ def build_mixer_block(dim,activation,mlp_ratio,mlp_layers,gated_attn):
         mlp  = []
         if gated_attn:
             mlp += [GatedAttention(d1)]
-        mlp += [nn.LayerNorm(dim)]
+        mlp += [nn.LayerNorm(dim,elementwise_affine=False, bias=False)]
         mlp += [nn.Linear(d1,d_mlp),activation()]
         mlp += [nn.Linear(d_mlp,d1)]
         net += [nn.Sequential(*mlp)]

@@ -15,7 +15,6 @@
 #
 
 import sys
-sys.path.append('/u/kyeo/FMTS/tsfm')
 
 import torch
 import torch.nn as nn
@@ -56,6 +55,9 @@ class PatchTSMixer(layer):
         scaling            = "none",
         d_model            = None,
         decoder_d_model    = None,
+        #reconstruction head
+        reconstruction_head= False,
+        reconstruction_type= 'full',
         #attention modules
         gated_attn         = False,
         self_attn          = False,
@@ -102,11 +104,19 @@ class PatchTSMixer(layer):
         second_dim = patch_dim
         third_dim  = channel_dim
 
+        self.num_patch   = length_dim[ first_dim]
+        self.len_patch   = length_dim[second_dim]
+        self.num_channel = length_dim[third_dim]
+
         self.enc_dim = [length_dim[first_dim],length_dim[second_dim],length_dim[third_dim]]
         self.enc_arrange = f'b r a v -> b ({first_dim} {second_dim}) {third_dim}'
-        self.dec_arrange = f'b {third_dim} {first_dim} {second_dim} -> b r a v'
 
-        #self.dec_arrange = f'b {first_dim} {second_dim} {third_dim} -> b r a v'
+        self.reconstruction_head = reconstruction_head
+
+        if self.reconstruction_head:
+            self.dec_arrange = f'b {first_dim} {second_dim} {third_dim} -> b r a v'
+        else:
+            self.dec_arrange = f'b {third_dim} {first_dim} {second_dim} -> b r a v'
 
         self.lower_bound = lower_bound
         self.variational = variational
@@ -145,6 +155,7 @@ class PatchTSMixer(layer):
             encoder_resconn=encoder_resconn,
             decoder_resconn=decoder_resconn,
             variational=variational,
+            reconstruction_type=reconstruction_type,
         )
 
         config.check_and_init_preprocessing()
@@ -152,8 +163,7 @@ class PatchTSMixer(layer):
         self.config = config
 
         self.encoder = PatchTSMixerVAEModel(config)
-        self.decoder = PatchTSMixerVAEDecoder(config)
-        #self.decoder = PatchTSMixerVAEDecoderWithReconstructionHead(config)
+        self.decoder = PatchTSMixerVAEDecoderWithReconstructionHead(config)
 
         test_data = torch.rand(1,context_length,num_input_channels)
         enc_out   = self.encoder(test_data)
@@ -218,20 +228,16 @@ class PatchTSMixer(layer):
 
             z_in = c0 + z_in*(c1+1)
 
-        z_in = z_in.reshape(-1,self.config.num_input_channels,
-                               self.config.num_patches,
-                               self.config.d_model_layerwise[-1])
-        dec_out = self.decoder(hidden_state=z_in)
-        x0 = dec_out[0]*self.output_scale + self.output_bias
-
-        #dec_out = self.decoder(decoder_input=z_in)
-        #x0 = dec_out.reconstruction_outputs*self.output_scale + self.output_bias
-        #nb = x0.size(0)
-        #nc = x0.size(-1)
-        #x0 = x0.reshape(nb,self.enc_dim[0],self.enc_dim[1],self.enc_dim[2])
+        dec_out = self.decoder(decoder_input=z_in)
+        if self.reconstruction_head:
+            x0 = dec_out.reconstruction_outputs
+            x0 = x0.reshape(-1,self.num_patch,self.len_patch,self.num_channel)
+        else:
+            x0 = dec_out.decoder_hidden_state
   
         x0 = einops.rearrange(x0,self.dec_arrange)
 
+        x0 = x0*self.output_scale + self.output_bias
         if self.lower_bound != None:
             x0 = F.relu(x0-self.lower_bound)+self.lower_bound
 

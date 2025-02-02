@@ -980,7 +980,11 @@ class PatchTSMixerVAEForReconstructionHead(nn.Module):
         self.reconstruction_type = config.reconstruction_type
 
         if config.reconstruction_type == "full":
-            self.base_reconstruction_block = nn.Linear((config.num_patches * head_d_model), config.context_length)
+            #self.base_reconstruction_block = nn.Linear((config.num_patches * head_d_model), config.context_length)
+            in_dim  = config.num_patches * head_d_model
+            out_dim = config.context_length
+            self.base_reconstruction_block = nn.Sequential(nn.LayerNorm(in_dim,elementwise_affine=False, bias=False),
+                                                           nn.Linear( in_dim,out_dim))
         else:
             self.base_reconstruction_block = nn.Linear(head_d_model, config.patch_length)
 

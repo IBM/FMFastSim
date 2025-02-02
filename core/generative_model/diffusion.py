@@ -32,7 +32,7 @@ class Diffusion(nn.Module):
                  dim_t_emb = 32,                #time embedding dimension
                  beta_info = None,              #noise schedule infor
                  dim_c     = 4,                 #dimension of conditional variable
-                 res_conn  = True,              #resnet connection
+                 res_conn  = False,             #resnet connection
                  add_mse   = False,             #addtional mse
                  reg_coef=0.0,reg_model='none', #regularization parameters
                  uniform_t = True,
