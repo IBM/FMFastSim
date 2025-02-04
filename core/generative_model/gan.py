@@ -29,7 +29,7 @@ from core.handler import ModelHandler
 from core.generative_model.prior_dist import prior_dist
 from core.generative_model.regularizer import regularizer
 
-from core.layers.lib_mixer import Mixer3D,Cond_Net,init_weights
+from core.layers.lib_mixer import Mixer3D,init_weights
 
 class GAN(nn.Module):
     def __init__(self, network=None, 
@@ -84,7 +84,7 @@ class GAN(nn.Module):
         #Define Discriminator
         self.d_net = D_Net(**d_net_param,gan_model=self.gan,cr_gan=cr_gan)
 
-        self.loss_counter = -1
+        self.loss_counter  = -1
 
     def forward(self, X, gan_step = None):
 
@@ -343,7 +343,7 @@ class DNet_Core(nn.Module):
         super().__init__()
 
         module = []
-        cond_net = []
+        pos_emb = []
         for i in range(len(dim_x0)-1):
             module += [Mixer3D(dim_x0     = dim_x0[i:i+2], 
                                dim_x1     = dim_x1[i:i+2], 
@@ -353,25 +353,61 @@ class DNet_Core(nn.Module):
                                mlp_layers = mlp_layers,
                                res_conn   = res_conn)]
 
-            cond_x0 = [4,dim_x0[i+1]] #dim_r
-            cond_x1 = [4,dim_x1[i+1]] #dim_a
-            cond_x2 = [8,dim_x2[i+1]] #dim_v
-            cond_net += [Cond_Net(cond_x0,cond_x1,cond_x2,dim_c,res_conn=False)]
+            pos_emb += [Cond_Net(dim_x0[i],dim_x1[i],dim_x2[i],dim_c)]
 
-        self.module   = nn.ModuleList(module)
-        self.cond_net = nn.ModuleList(cond_net)
+        self.module  = nn.ModuleList(module)
+        self.pos_emb = nn.ModuleList(pos_emb)
 
     #X_in : input of dimension Batch x Vertical x Radial x Azimuthal
-    def forward(self,x_in,c_in=None):
+    def forward(self,x_in,c_in):
 
         z0 = x_in
         for i in range(len(self.module)):
+            z0 = z0 + self.pos_emb[i](c_in)
             z0 = self.module[i](z0)
-            if c_in != None:
-                pos_emb,scale_emb = self.cond_net[i](c_in)
-                z0 = pos_emb + z0*(scale_emb+1)
 
         return z0
+
+class Cond_Net(nn.Module):
+    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,activation=nn.SiLU,norm=False):
+        super().__init__()
+
+        self.dim_c  = dim_c
+        self.dim_x0 = dim_x0
+        self.dim_x1 = dim_x1
+        self.dim_x2 = dim_x2
+
+        self.norm = norm
+
+        self.x0_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                    nn.Linear(64,64),activation(),
+                                    nn.Linear(64,dim_x0))
+
+        self.x1_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                    nn.Linear(64,64),activation(),
+                                    nn.Linear(64,dim_x1))
+
+        self.x2_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                    nn.Linear(64,64),activation(),
+                                    nn.Linear(64,dim_x2))
+
+    def forward(self,c_in):
+        #create dimensional embedding
+        x0 = self.x0_net(c_in)
+        x1 = self.x1_net(c_in)
+        x2 = self.x2_net(c_in)
+
+        y0 = x0.unsqueeze(-1).repeat(1,1,self.dim_x1)   + x1.unsqueeze(1)
+        y1 = y0.unsqueeze(-1).repeat(1,1,1,self.dim_x2) + x2.unsqueeze(1).unsqueeze(1)
+
+        if self.norm:
+            y1 = F.layer_norm(y1,[self.dim_x0,self.dim_x1,self.dim_x2])
+
+        return y1
+
 
 class CR_D_Net(nn.Module):
     def __init__(self,dim_x,dim_c,avg_dim,activation,gan_model='gan',moment=1):
@@ -385,22 +421,17 @@ class CR_D_Net(nn.Module):
         
         self.core = nn.Sequential(nn.Conv1d(in_channels= 1,out_channels=16,kernel_size=2),activation(),
                                   nn.Conv1d(in_channels=16,out_channels=16,kernel_size=2),activation(),
-                                  nn.Conv1d(in_channels=16,out_channels= 1,kernel_size=1),activation())
-        self.enc  = nn.Linear((dim_x-1*2)*1,64)
+                                  nn.Conv1d(in_channels=16,out_channels= 8,kernel_size=2),activation())
 
-        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,64),activation(),
-                                       nn.LayerNorm(64,elementwise_affine=False, bias=False),
-                                       nn.Linear(64,64),activation(),
-                                       nn.Linear(64,64))
+        self.pos_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                     #nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                     nn.Linear(64,64),activation(),
+                                     nn.Linear(64,dim_x))
 
-        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
-                                       nn.LayerNorm(64,elementwise_affine=False, bias=False),
-                                       nn.Linear(64,64),activation(),
-                                       nn.Linear(64,64))
-
-        self.score= nn.Sequential(nn.Linear(64,64),activation(),
-                                  nn.Linear(64,64),activation(),
-                                  nn.Linear(64, 1))
+        self.score= nn.Sequential(nn.Linear((dim_x-1*3)*8,128),activation(),
+                                  nn.Linear(128,128),activation(),
+                                  nn.Linear(128,128),activation(),
+                                  nn.Linear(128, 1))
 
         if gan_model == 'gan':
             self.score.add_module('scale',nn.Sigmoid())
@@ -419,16 +450,12 @@ class CR_D_Net(nn.Module):
     def get_score(self,x_in,c_in):
         nb = x_in.size(0)
 
-        c0 = self.  pos_emb(c_in)
-        c1 = self.scale_emb(c_in)
+        pos_emb = self.pos_emb(c_in)
 
-        z0 = x_in/self.data_scale
-        z1 = self.core(z0.unsqueeze(1))
-        z2 = self.enc (z1.view(nb,-1))
+        z0 = x_in/self.data_scale + pos_emb
+        z1  = self.core (z0.unsqueeze(1))
+        out = self.score(z1.view(nb,-1))
 
-        z3 = c0+z2*(c1+1)
-
-        out = self.score(z3)
         return out
 
     @torch.no_grad()
@@ -447,22 +474,10 @@ class Total_E_D_Net(nn.Module):
 
         self.data_scale =  0
         
-        self.enc = nn.Sequential(nn.Linear(  1,128),activation(),
-                                 nn.Linear(128,64))
-
-        self.pos_emb   = nn.Sequential(nn.Linear(dim_c,128),activation(),
-                                       nn.LayerNorm(128,elementwise_affine=False, bias=False),
-                                       nn.Linear(128,64),activation(),
-                                       nn.Linear( 64,64))
-
-        self.scale_emb = nn.Sequential(nn.Linear(dim_c,128),activation(),
-                                       nn.LayerNorm(128,elementwise_affine=False, bias=False),
-                                       nn.Linear(128,64),activation(),
-                                       nn.Linear( 64,64))
-
-        self.score= nn.Sequential(nn.Linear(64,64),activation(),
-                                  nn.Linear(64,64),activation(),
-                                  nn.Linear(64,  1))
+        self.score = nn.Sequential(nn.Linear(dim_c+1,128),activation(),
+                                   nn.Linear(    128,128),activation(),
+                                   nn.Linear(    128,128),activation(),
+                                   nn.Linear(    128,  1))
 
         if gan_model == 'gan':
             self.score.add_module('scale',nn.Sigmoid())
@@ -481,15 +496,9 @@ class Total_E_D_Net(nn.Module):
     def get_score(self,x_in,c_in):
         nb = x_in.size(0)
 
-        c0 = self.pos_emb  (c_in)
-        c1 = self.scale_emb(c_in)
-
         z0 = x_in/self.data_scale
-        z1 = self.enc(z0.view(nb,-1))
-
-        z2 = c0 + z1*(1+c1)
-
-        out = self.score(z2)
+        z0 = torch.cat([x_in,c_in],dim=1)
+        out = self.score(z0)
         return out
 
     @torch.no_grad()
@@ -579,42 +588,33 @@ class GANHandler(ModelHandler):
         train_loss = 0.0
         for X,y in trainloader:
             X,y = self._to_dev(X), self._to_dev(y)
-            cond_var = prepare_input(X,return_cond=True)
 
-            #step_switch = update_counter()
-            #if step_switch == 0:
-            #    gan_step = 'd_step'
-            #else:
-            #    gan_step = 'g_step'
+            step_switch = update_counter()
+            if step_switch == 0:
+                gan_step = 'd_step'
+            else:
+                gan_step = 'g_step'
 
-            for substep in range(g_net_substep+1):
-                if substep == 0:
-                    gan_step = 'd_step'
-                else:
-                    gan_step = 'g_step'
+            optimizer.zero_grad()
+            y_hat = model(X,gan_step=gan_step)
+            loss  = _loss(y_hat=y_hat)
 
-                optimizer.zero_grad()
-                y_hat = model(X,gan_step=gan_step)
-                loss  = _loss(y_hat=y_hat)
+            loss.backward()
 
-                loss.backward()
+            optimizer.step()
 
-                optimizer.step()
+            #weight clipping
+            if (gan_type == 'wgan') and (grad_norm_coef < 1.e-5):
+                for p in d_net_params():
+                    p.data.clamp_(-0.01,0.01)
 
-                #weight clipping
-                if (gan_type == 'wgan') and (grad_norm_coef < 1.e-5):
-                    for p in d_net_params():
-                        p.data.clamp_(-0.01,0.01)
-
-                train_loss += loss.item()/(g_net_substep+1)
+            train_loss += loss.item()
 
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
             for X,y in validloader:
                 X,y = self._to_dev(X), self._to_dev(y)
-
-                cond_var = prepare_input(X,return_cond=True)
 
                 y_hat = model(X,gan_step='d_step')
                 loss  = _loss(y_hat=y_hat)
