@@ -26,7 +26,7 @@ import torch.nn.functional as F
 #actication: activation function
 #dropout: dropout rate (for future use. not implemented)
 class Mixer2D(nn.Module):
-    def __init__(self,dim_x0=[1,1],dim_x1=[1,1],mlp_ratio=4,mlp_layers=2,activation=nn.SiLU,dropout=0.0,res_conn=True,gated_attn=False):
+    def __init__(self,dim_x0=[1,1],dim_x1=[1,1],mlp_ratio=4,mlp_layers=2,activation=nn.SiLU,dropout=0.0,res_conn=True,gated_attn=False,norm='layer'):
         super().__init__()
 
         self.res_conn = res_conn
@@ -42,18 +42,19 @@ class Mixer2D(nn.Module):
         d0 = dim_x0[1]
         d1 = dim_x1[1]
 
-        self.x0_net = build_mixer_block([d1,d0],activation,mlp_ratio,mlp_layers,gated_attn)
-        self.x1_net = build_mixer_block([d0,d1],activation,mlp_ratio,mlp_layers,gated_attn)
+        self.x0_net = build_mixer_block([d1,d0],activation,mlp_ratio,mlp_layers,gated_attn,norm=norm)
+        self.x1_net = build_mixer_block([d0,d1],activation,mlp_ratio,mlp_layers,gated_attn,norm=norm)
 
     #input x_in: tensor of which last two dimenisons are ..... x dim_x0[0] x dim_x1[0]
     #output    : tensor of the same dimension with x_in
     def forward(self,x_in,shift=0.0):
 
         z0 = x_in + shift
+
         if self.adapter != None:
             z1 = self.adapter[0](z0).transpose(-1,-2)
             z0 = self.adapter[1](z1).transpose(-1,-2)
-
+        
         for i in range(len(self.x0_net)):
             if self.res_conn:
                 z1 = (z0+self.x1_net[i](z0)).transpose(-1,-2)
@@ -61,7 +62,7 @@ class Mixer2D(nn.Module):
             else:
                 z1 =     self.x1_net[i](z0) .transpose(-1,-2)
                 z0 =     self.x0_net[i](z1) .transpose(-1,-2)
-        
+
         return z0
   
 #Mixer for 3-D tensor
@@ -73,7 +74,7 @@ class Mixer2D(nn.Module):
 #actication: activation function
 #dropout: dropout rate (for future use. not implemented)
 class Mixer3D(nn.Module):
-    def __init__(self,dim_x0=[1,1],dim_x1=[1,1],dim_x2=[1,1],mlp_ratio=4,mlp_layers=2,activation=nn.SiLU,dropout=0.0,res_conn=True,gated_attn=False):
+    def __init__(self,dim_x0=[1,1],dim_x1=[1,1],dim_x2=[1,1],mlp_ratio=4,mlp_layers=2,activation=nn.SiLU,dropout=0.0,res_conn=True,gated_attn=False,norm='layer'):
         super().__init__()
 
         self.res_conn = res_conn
@@ -93,15 +94,16 @@ class Mixer3D(nn.Module):
         d1 = dim_x1[1]
         d2 = dim_x2[1]
 
-        self.x0_net = build_mixer_block([d1,d2,d0],activation,mlp_ratio,mlp_layers,gated_attn)
-        self.x1_net = build_mixer_block([d2,d0,d1],activation,mlp_ratio,mlp_layers,gated_attn)
-        self.x2_net = build_mixer_block([d0,d1,d2],activation,mlp_ratio,mlp_layers,gated_attn)
+        self.x0_net = build_mixer_block([d1,d2,d0],activation,mlp_ratio,mlp_layers,gated_attn,norm=norm)
+        self.x1_net = build_mixer_block([d2,d0,d1],activation,mlp_ratio,mlp_layers,gated_attn,norm=norm)
+        self.x2_net = build_mixer_block([d0,d1,d2],activation,mlp_ratio,mlp_layers,gated_attn,norm=norm)
 
     #input x_in: tensor of which last two dimenisons are ..... x dim_x0[0] x dim_x1[0] x dim_x2[0]
     #output    : tensor of dimension                     ..... x dim_x0[1] x dim_x1[1] x dim_x2[1]
     def forward(self,x_in,shift=0.0):
 
         z0 = x_in + shift
+
         if self.adapter != None:
             z1 = self.adapter[0](z0).permute(0,3,1,2)
             z2 = self.adapter[1](z1).permute(0,3,1,2)
@@ -127,7 +129,7 @@ class Mixer3D(nn.Module):
 #actication: activation function
 #dropout: dropout rate (for future use. not implemented)
 class MLP_2D(nn.Module):
-    def __init__(self,dim_x0=[1,1],dim_x1=[1,1],mlp_ratio=4,mlp_layers=2,activation=nn.SiLU,dropout=0.0,res_conn=True,gated_attn=False):
+    def __init__(self,dim_x0=[1,1],dim_x1=[1,1],mlp_ratio=4,mlp_layers=2,activation=nn.SiLU,dropout=0.0,res_conn=True,gated_attn=False,norm='layer'):
         super().__init__()
 
         self.dim_x0   = dim_x0
@@ -144,13 +146,14 @@ class MLP_2D(nn.Module):
         else:
             self.adapter = nn.Linear(dim_in,dim_out)
 
-        self.x_net = build_mixer_block([dim_out],activation,mlp_ratio,mlp_layers,gated_attn)
+        self.x_net = build_mixer_block([dim_out],activation,mlp_ratio,mlp_layers,gated_attn,norm=norm)
 
     #input x_in: tensor of which last two dimenisons are ..... x dim_x0[0] x dim_x1[0]
     #output    : tensor of the same dimension with x_in
     def forward(self,x_in,shift=0.0):
 
         z0 = (x_in+shift).flatten(-2)
+
         if self.adapter != None:
             z0 = self.adapter(z0)
 
@@ -178,7 +181,7 @@ class MLP_2D(nn.Module):
 # dropout: (float) dropout ratio
 # res_conn: (bool) use resnet connection or not
 class MixerTF_Block(nn.Module):
-    def __init__(self,dim_in=[1,1,1],dim_out=[1,1,1],mixer_dim=2,mlp_ratio=4,mlp_layers=2,num_heads=0,dropout=0.1,activation=nn.SiLU,res_conn=True,gated_attn=False):
+    def __init__(self,dim_in=[1,1,1],dim_out=[1,1,1],mixer_dim=2,mlp_ratio=4,mlp_layers=2,num_heads=0,dropout=0.1,activation=nn.SiLU,res_conn=True,gated_attn=False,norm='layer'):
         super().__init__()
 
         self.dim_in  = dim_in
@@ -193,11 +196,11 @@ class MixerTF_Block(nn.Module):
         #mixer
         self.activation = activation
         if   mixer_dim == 1:
-            self.mixer = MLP_2D        (dim_x1,dim_x2,mlp_ratio,mlp_layers,activation,dropout,res_conn,gated_attn)
+            self.mixer = MLP_2D        (dim_x1,dim_x2,mlp_ratio,mlp_layers,activation,dropout,res_conn,gated_attn,norm=norm)
         elif mixer_dim == 2:
-            self.mixer = Mixer2D       (dim_x1,dim_x2,mlp_ratio,mlp_layers,activation,dropout,res_conn,gated_attn)
+            self.mixer = Mixer2D       (dim_x1,dim_x2,mlp_ratio,mlp_layers,activation,dropout,res_conn,gated_attn,norm=norm)
         elif mixer_dim == 3:
-            self.mixer = Mixer3D(dim_x0,dim_x1,dim_x2,mlp_ratio,mlp_layers,activation,dropout,res_conn,gated_attn)
+            self.mixer = Mixer3D(dim_x0,dim_x1,dim_x2,mlp_ratio,mlp_layers,activation,dropout,res_conn,gated_attn,norm=norm)
 
         #attention
         d_model = dim_in[1]*dim_in[2]
@@ -233,7 +236,7 @@ class MixerTF_Block(nn.Module):
 #   Mixer to deal with conditioning variable
 ###########################################################
 class Cond_Net(nn.Module):
-    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,res_conn=True,gated_attn=False,pos=True,mode='both'):
+    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,res_conn=True,gated_attn=False,pos=True,mode='both',norm='layer'):
         super().__init__()
 
         self.dim_x0 = dim_x0
@@ -264,7 +267,8 @@ class Cond_Net(nn.Module):
                                    mlp_layers = 3,
                                    activation=nn.SiLU,
                                    gated_attn=gated_attn,
-                                   res_conn=res_conn)]
+                                   res_conn=res_conn,
+                                   norm=norm)]
 
             self.pos_mixer = nn.Sequential(*module)
 
@@ -278,7 +282,8 @@ class Cond_Net(nn.Module):
                                    mlp_layers = 3,
                                    activation=nn.SiLU,
                                    gated_attn=gated_attn,
-                                   res_conn=res_conn)]
+                                   res_conn=res_conn,
+                                   norm=norm)]
 
             self.scale_mixer = nn.Sequential(*module)
 
@@ -337,7 +342,7 @@ class GatedAttention(nn.Module):
         return inputs
 
 
-def build_mixer_block(dim,activation,mlp_ratio,mlp_layers,gated_attn):
+def build_mixer_block(dim,activation,mlp_ratio,mlp_layers,gated_attn,norm='layer'):
 
     d1 = dim[-1]
     d_mlp = int(d1*mlp_ratio)
@@ -347,7 +352,8 @@ def build_mixer_block(dim,activation,mlp_ratio,mlp_layers,gated_attn):
         mlp  = []
         if gated_attn:
             mlp += [GatedAttention(d1)]
-        mlp += [nn.LayerNorm(dim,elementwise_affine=False, bias=False)]
+        if norm == 'layer':
+            mlp += [nn.LayerNorm(dim,elementwise_affine=False, bias=False)]
         mlp += [nn.Linear(d1,d_mlp),activation()]
         mlp += [nn.Linear(d_mlp,d1)]
         net += [nn.Sequential(*mlp)]

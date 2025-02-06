@@ -403,6 +403,8 @@ class PatchTSMixerVAENormLayer(nn.Module):
 
         if "batch" in config.norm_mlp.lower():
             self.norm = PatchTSMixerVAEBatchNorm(config)
+        elif "identity" in config.norm_mlp.lower():
+            self.norm = nn.Identity()
         else:
             self.norm = nn.LayerNorm(config.d_model, eps=config.norm_eps)
 
