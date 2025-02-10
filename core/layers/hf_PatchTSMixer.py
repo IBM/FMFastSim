@@ -81,6 +81,7 @@ class PatchTSMixer(layer):
         lower_bound=None,
         output_scale = 1.0,
         output_bias  = 0.0,
+        scale_layer   = False,
         ):
 
         super().__init__()
@@ -123,6 +124,11 @@ class PatchTSMixer(layer):
 
         self.output_scale = output_scale
         self.output_bias  = output_bias
+
+        if scale_layer:
+            self.scale_layer = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),nn.Linear(128,1))
+        else:
+            self.scale_layer = None
 
         if d_model == None:
             d_model = patch_length
@@ -236,6 +242,9 @@ class PatchTSMixer(layer):
             x0 = dec_out.decoder_hidden_state
   
         x0 = einops.rearrange(x0,self.dec_arrange)
+
+        if self.scale_layer:
+            x0 = x0*self.scale_layer(c_in).exp().unsqueeze(-1).unsqueeze(-1)
 
         x0 = x0*self.output_scale + self.output_bias
         if self.lower_bound != None:

@@ -40,7 +40,7 @@ class GAN(nn.Module):
                  gan_model='wgan',               #'gan' or 'wgan'
                  grad_norm_coef = 0,             #penalty for the gradient norm
                  cr_gan = 0,                     #consistency regularization
-                 pretrain_epoch = 0,
+                 pretrain_epoch = 0,             #number of pretraining steps
                  ):
 
         super().__init__()
@@ -80,105 +80,25 @@ class GAN(nn.Module):
         #Define Prior
         #input_dim = self.model.decoder_input
         input_dim = torch.zeros(1,dim_r,dim_a,dim_v)
-        self.prior = prior_dist(prior_distribution,input_dim)
+        self.prior = prior_dist(prior_distribution,input_dim,self.model.dim_c)
 
         #Define Discriminator
         self.d_net = D_Net(**d_net_param,gan_model=self.gan,cr_gan=cr_gan)
 
-        self.loss_counter  = -1
+        self. loss_counter = -1
         self.epoch_counter = -1
 
         self.pretrain_epoch = pretrain_epoch
 
-    def forward(self, X, gan_step = None):
+    def forward(self, X):
 
         x_input, cond_var = self.prepare_input(X)
 
-        eps = self.prior(nbatch=cond_var.size(0))
+        eps = self.prior(cond_var.size(0),cond_var)
 
+        x_fake = self.model(eps,cond_var) #*cond_var[:,0].view(-1,1,1,1)
 
-        if gan_step == None:
-            x_out = self.model(eps,cond_var)
-            return x_out
-
-        #Discriminator Step
-        elif gan_step == 'd_step':
-
-            with torch.no_grad():
-                x_fake = self.model(eps,cond_var)
-
-            if self.training:
-                x_perm = x_input[torch.randperm(x_input.size(0),device=x_input.device)]
-
-                x_in = torch.cat([x_input ,x_fake  ,x_perm  ])
-                c_in = torch.cat([cond_var,cond_var,cond_var])
-                
-                out = self.d_net(x_in,c_in)
-
-                nb = x_input.size(0)
-
-                d_true = out[nb*0:nb*1]
-                d_fake = out[nb*1:nb*2]
-                d_perm = out[nb*2:nb*3]
-            else:
-                x_in = torch.cat([x_input ,x_fake  ])
-                c_in = torch.cat([cond_var,cond_var])
-                
-                out = self.d_net(x_in,c_in)
-
-                nb = x_input.size(0)
-
-                d_true = out[nb*0:nb*1]
-                d_fake = out[nb*1:nb*2]
-                d_perm = torch.zeros_like(d_fake)
-
-            if self.gan == 'gan':
-                d_true = d_true*0.98+0.01
-                d_fake = d_fake*0.98+0.01
-                d_score = -(d_true.log().mean()+d_fake.mul(-1).add(1).log().mean()  \
-                                               +d_perm.mul(-1).add(1).log().mean())
-            elif self.gan == 'wgan':
-                d_score = -(d_true - d_fake).mean()
-            else:
-                raise ValueError
-
-            if not self.training:
-                d_score = -d_score
-                if self.gan == 'gan':
-                    d_score = d_score - 2*np.log(0.5)
-
-            if (self.training==True) and (self.grad_norm_coef > 1.e-6):
-                gp = self.d_net.gradient_penalty(x_fake,x_input,cond_var)
-                d_score = d_score+gp*self.grad_norm_coef
-
-            return d_score
-
-        #Generator Step
-        elif gan_step == 'g_step':
-            self.d_net.requires_grad_(False)
-
-            x_out  = self.model(eps,cond_var)
-            d_fake = self.d_net(x_out,cond_var)
-
-            if self.gan == 'gan':
-                d_fake = d_fake*0.98+0.01
-                d_score = - d_fake.log().mean()
-            elif self.gan == 'wgan':
-                d_score = - d_fake.mean()
-            else:
-                raise ValueError
-         
-            reg = self.regularizer.compute(y_hat=x_out,y_true=x_input)
-
-            d_score = d_score + reg
-
-            self.d_net.requires_grad_(True)
-
-            return d_score
-
-        else:
-            print('step is not correctly defined')
-            raise ValueError
+        return x_fake
 
 
     def prepare_input(self,X,return_cond=False):
@@ -200,15 +120,100 @@ class GAN(nn.Module):
         return x_out
 
     def update_loss_counter(self):
-        self.loss_counter = (self.loss_counter+1)%(self.g_net_substep+1)
+        if self.epoch_counter < self.pretrain_epoch:
+            self.loss_counter = 0
+        else:
+            self.loss_counter = (self.loss_counter+1)%(self.g_net_substep+1)
         return self.loss_counter
 
     def reset_loss_counter(self):
         self.loss_counter = -1
 
-    def loss(self,y_hat=None,y_true=None,cond_var=None):
+    def loss(self,x_fake,x_true,gan_step):
+
+        x_input, cond_var = self.prepare_input(x_true)
    
-        d_score = y_hat
+        #Discriminator Step
+        if gan_step == 'd_step':
+            x_fake = x_fake.detach()
+            x_perm = x_input[torch.randperm(x_input.size(0))]
+
+            x_in = torch.cat([x_input ,x_fake  ,x_perm  ])
+            c_in = torch.cat([cond_var,cond_var,cond_var])
+            
+            out = self.d_net(x_in,c_in)
+            
+            if self.d_net.cr_d_net == None:
+                out = out.chunk(3,dim=0)
+                d_true = out[0]
+                d_fake = out[1]
+                d_perm = out[2]
+            else:
+                n_cr = len(self.d_net.cr_d_net)
+                out = out.chunk(3*(n_cr+1),dim=0)
+
+                d_true = []
+                d_fake = []
+                d_perm = []
+                for i in range(n_cr+1):
+                    d_true += [out[3*i  ]]
+                    d_fake += [out[3*i+1]]
+                    d_perm += [out[3*i+2]]
+
+                d_true = torch.cat(d_true)
+                d_fake = torch.cat(d_fake)
+                d_perm = torch.cat(d_perm)
+
+            if self.gan == 'gan':
+                d_true = d_true*0.98+0.01
+                d_fake = d_fake*0.98+0.01
+                d_perm = d_perm*0.98+0.01
+                d_score = -(d_true.log().mean()+d_fake.mul(-1).add(1).log().mean()) \
+                          - d_perm.mul(-1).add(1).log().mean()
+            elif self.gan == 'wgan':
+                d_score = -(d_true - d_fake).mean() + d_perm.mean()
+            else:
+                raise ValueError
+
+            if not self.training:
+                d_score = -d_score
+                if self.gan == 'gan':
+                    d_score = d_score - 2*np.log(0.5)
+
+            if (self.training==True) and (self.grad_norm_coef > 1.e-6):
+                gp = self.d_net.gradient_penalty(x_fake,x_input,cond_var)
+                d_score = d_score+gp*self.grad_norm_coef
+
+            return d_score
+
+        #Generator Step
+        elif gan_step == 'g_step':
+            self.d_net.requires_grad_(False)
+
+            d_fake = self.d_net(x_fake,cond_var)
+
+            if self.gan == 'gan':
+                d_fake = d_fake*0.98+0.01
+                d_score = - d_fake.log().mean()
+            elif self.gan == 'wgan':
+                d_score = - d_fake.mean()
+            else:
+                raise ValueError
+         
+            if not self.training:
+                d_score = -d_score
+                if self.gan == 'gan':
+                    d_score = d_score - np.log(0.5)
+            else:
+                d_score = d_score + self.regularizer.compute(y_hat=x_fake,y_true=x_input)
+
+            self.d_net.requires_grad_(True)
+
+            return d_score
+
+        else:
+            print('step is not correctly defined')
+            raise ValueError
 
         return d_score
 
@@ -378,6 +383,7 @@ class DNet_Core(nn.Module):
 
         module = []
         pos_emb = []
+        scale_emb = []
         for i in range(len(dim_x0)-1):
             module += [Mixer3D(dim_x0     = dim_x0[i:i+2], 
                                dim_x1     = dim_x1[i:i+2], 
@@ -388,17 +394,19 @@ class DNet_Core(nn.Module):
                                res_conn   = res_conn,
                                norm       = norm)]
 
-            pos_emb += [Cond_Net(dim_x0[i],dim_x1[i],dim_x2[i],dim_c)]
+            pos_emb   += [Cond_Net(dim_x0[i],dim_x1[i],dim_x2[i],dim_c)]
+            scale_emb += [Cond_Net(dim_x0[i],dim_x1[i],dim_x2[i],dim_c)]
 
-        self.module  = nn.ModuleList(module)
-        self.pos_emb = nn.ModuleList(pos_emb)
+        self.module    = nn.ModuleList(module)
+        self.  pos_emb = nn.ModuleList(  pos_emb)
+        self.scale_emb = nn.ModuleList(scale_emb)
 
     #X_in : input of dimension Batch x Vertical x Radial x Azimuthal
     def forward(self,x_in,c_in):
 
         z0 = x_in
         for i in range(len(self.module)):
-            z0 = z0 + self.pos_emb[i](c_in)
+            z0 = self.pos_emb[i](c_in) + z0*(self.scale_emb[i](c_in)+1)
             z0 = self.module[i](z0)
 
         return z0
@@ -455,14 +463,20 @@ class CR_D_Net(nn.Module):
         self.data_scale = 0
         
         self.pos_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                     nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                      nn.Linear(64,64),activation(),
                                      nn.Linear(64,64))
+
+        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                       nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                       nn.Linear(64,64),activation(),
+                                       nn.Linear(64,64))
 
         self.encoder = nn.Sequential(nn.Linear(dim_x,128),activation(),
                                      nn.Linear(128,128),activation(),
                                      nn.Linear(128,64))
 
-        self.score= nn.Sequential(nn.Linear(128,128),activation(),
+        self.score= nn.Sequential(nn.Linear( 64,128),activation(),
                                   nn.Linear(128,128),activation(),
                                   nn.Linear(128,  1))
 
@@ -478,14 +492,16 @@ class CR_D_Net(nn.Module):
 
     def scale_data(self,x_in):
         out = x_in.pow(self.moment).sum(self.avg_dim)
-        out = out/self.data_scale*10.0
+        out = out/self.data_scale
         return out
 
     def get_score(self,x_in,c_in):
 
-        z0 = self.encoder(x_in)
-        z1 = self.pos_emb(c_in)
-        out = self.score(torch.cat([z0,z1],dim=1))
+        pos_emb   = self.  pos_emb(c_in)
+        scale_emb = self.scale_emb(c_in)
+
+        z = pos_emb + self.encoder(x_in)*(scale_emb+1)
+        out = self.score(z)
 
         return out
 
@@ -506,13 +522,19 @@ class Total_E_D_Net(nn.Module):
         self.data_scale =  0
         
         self.pos_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                     nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                      nn.Linear(64,64),activation(),
                                      nn.Linear(64,32))
+
+        self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                       nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                       nn.Linear(64,64),activation(),
+                                       nn.Linear(64,32))
 
         self.encoder = nn.Sequential(nn.Linear( 1,32),activation(),
                                      nn.Linear(32,32))
 
-        self.score= nn.Sequential(nn.Linear( 64,128),activation(),
+        self.score= nn.Sequential(nn.Linear( 32,128),activation(),
                                   nn.Linear(128,128),activation(),
                                   nn.Linear(128,  1))
 
@@ -528,14 +550,17 @@ class Total_E_D_Net(nn.Module):
 
     def scale_data(self,x_in):
         out = x_in.pow(self.moment).sum((1,2,3)).unsqueeze(1)
-        out = out/self.data_scale*10.0
+        out = out/self.data_scale
         return out
 
     def get_score(self,x_in,c_in):
 
-        z0 = self.encoder(x_in)
-        z1 = self.pos_emb(c_in)
-        out = self.score(torch.cat([z0,z1],dim=1))
+        pos_emb   = self.  pos_emb(c_in)
+        scale_emb = self.scale_emb(c_in)
+
+        z = pos_emb + self.encoder(x_in)*(scale_emb+1)
+        out = self.score(z)
+
         return out
 
     @torch.no_grad()
@@ -620,26 +645,22 @@ class GANHandler(ModelHandler):
 
             norm_cr_scale(norm_fac)
 
-        model.epoch_counter += 1
-
         reset_counter()
+        model.epoch_counter += 1
 
         train_loss = 0.0
         for X,y in trainloader:
             X,y = self._to_dev(X), self._to_dev(y)
 
-            if model.epoch_counter < model.pretrain_epoch:
+            step_switch = update_counter()
+            if step_switch == 0:
                 gan_step = 'd_step'
             else:
-                step_switch = update_counter()
-                if step_switch == 0:
-                    gan_step = 'd_step'
-                else:
-                    gan_step = 'g_step'
+                gan_step = 'g_step'
 
             optimizer.zero_grad()
-            y_hat = model(X,gan_step=gan_step)
-            loss  = _loss(y_hat=y_hat)
+            x_fake = model(X)
+            loss   = _loss(x_fake=x_fake,x_true=X,gan_step=gan_step)
 
             loss.backward()
 
@@ -658,8 +679,8 @@ class GANHandler(ModelHandler):
             for X,y in validloader:
                 X,y = self._to_dev(X), self._to_dev(y)
 
-                y_hat = model(X,gan_step='d_step')
-                loss  = _loss(y_hat=y_hat)
+                x_fake = model(X)
+                loss   = _loss(x_fake=x_fake,x_true=X,gan_step='g_step')
 
                 val_loss += loss.item()
         model.train()

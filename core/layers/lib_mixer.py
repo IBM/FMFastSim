@@ -353,7 +353,8 @@ def build_mixer_block(dim,activation,mlp_ratio,mlp_layers,gated_attn,norm='layer
         if gated_attn:
             mlp += [GatedAttention(d1)]
         if norm == 'layer':
-            mlp += [nn.LayerNorm(dim,elementwise_affine=False, bias=False)]
+            #mlp += [nn.LayerNorm(dim,elementwise_affine=False, bias=False)]
+            mlp += [nn.LayerNorm(d1,elementwise_affine=False, bias=False)]
         mlp += [nn.Linear(d1,d_mlp),activation()]
         mlp += [nn.Linear(d_mlp,d1)]
         net += [nn.Sequential(*mlp)]
