@@ -133,6 +133,12 @@ class GAN(nn.Module):
 
         x_input, cond_var = self.prepare_input(x_true)
    
+        if self.d_net.cr_d_net == None:
+            n_cr = 0
+        else:
+            n_cr = len(self.d_net.cr_d_net)
+        d_score_weight = [1.0] + [10.0 for i in range(n_cr)]
+
         #Discriminator Step
         if gan_step == 'd_step':
             x_fake = x_fake.detach()
@@ -141,81 +147,82 @@ class GAN(nn.Module):
             x_in = torch.cat([x_input ,x_fake  ,x_perm  ])
             c_in = torch.cat([cond_var,cond_var,cond_var])
             
-            out = self.d_net(x_in,c_in)
-            
-            if self.d_net.cr_d_net == None:
-                out = out.chunk(3,dim=0)
-                d_true = out[0]
-                d_fake = out[1]
-                d_perm = out[2]
-            else:
-                n_cr = len(self.d_net.cr_d_net)
-                out = out.chunk(3*(n_cr+1),dim=0)
+            out = self.d_net(x_in,c_in).chunk(3*(n_cr+1),dim=0)
 
-                d_true = []
-                d_fake = []
-                d_perm = []
-                for i in range(n_cr+1):
-                    d_true += [out[3*i  ]]
-                    d_fake += [out[3*i+1]]
-                    d_perm += [out[3*i+2]]
+            d_score = 0.0
+            d_score_gstep = 0.0
+            for i in range(n_cr+1):
+                d_true = out[3*i  ]
+                d_fake = out[3*i+1]
+                d_perm = out[3*i+2]
 
-                d_true = torch.cat(d_true)
-                d_fake = torch.cat(d_fake)
-                d_perm = torch.cat(d_perm)
-
-            if self.gan == 'gan':
-                d_true = d_true*0.98+0.01
-                d_fake = d_fake*0.98+0.01
-                d_perm = d_perm*0.98+0.01
-                d_score = -(d_true.log().mean()+d_fake.mul(-1).add(1).log().mean()) \
-                          - d_perm.mul(-1).add(1).log().mean()
-            elif self.gan == 'wgan':
-                d_score = -(d_true - d_fake).mean() + d_perm.mean()
-            else:
-                raise ValueError
-
-            if not self.training:
-                d_score = -d_score
                 if self.gan == 'gan':
-                    d_score = d_score - 2*np.log(0.5)
+                    d_true = d_true*0.98+0.01
+                    d_fake = d_fake*0.98+0.01
+                    d_perm = d_perm*0.98+0.01
+
+                    loss = -(d_true.log().mean()+d_fake.mul(-1).add(1).log().mean()) \
+                           - d_perm.mul(-1).add(1).log().mean()
+                elif self.gan == 'wgan':
+                    loss = -(d_true - d_fake).mean() + d_perm.mean()
+                else:
+                    raise ValueError
+
+                d_score = d_score + loss*d_score_weight[i]/sum(d_score_weight)
+
+                if self.gan == 'gan':
+                    d_score_gstep += d_fake.detach().log().mean().item() - np.log(0.5)
+                elif self.gan == 'wgan':
+                    d_score_gstep += d_fake.detach().mean().item()
+                else:
+                    raise ValueError
+
+            d_score_gstep /= n_cr+1
 
             if (self.training==True) and (self.grad_norm_coef > 1.e-6):
                 gp = self.d_net.gradient_penalty(x_fake,x_input,cond_var)
                 d_score = d_score+gp*self.grad_norm_coef
 
-            return d_score
+            return d_score,d_score_gstep
 
         #Generator Step
         elif gan_step == 'g_step':
             self.d_net.requires_grad_(False)
-
-            d_fake = self.d_net(x_fake,cond_var)
-
-            if self.gan == 'gan':
-                d_fake = d_fake*0.98+0.01
-                d_score = - d_fake.log().mean()
-            elif self.gan == 'wgan':
-                d_score = - d_fake.mean()
-            else:
-                raise ValueError
-         
-            if not self.training:
-                d_score = -d_score
-                if self.gan == 'gan':
-                    d_score = d_score - np.log(0.5)
-            else:
-                d_score = d_score + self.regularizer.compute(y_hat=x_fake,y_true=x_input)
-
+            out = self.d_net(x_fake,cond_var).chunk(n_cr+1,dim=0)
             self.d_net.requires_grad_(True)
 
-            return d_score
+            d_score = 0.0
+            d_score_gstep = 0.0
+            for i in range(n_cr+1):
+                d_fake = out[i]
+
+                if self.gan == 'gan':
+                    d_fake = d_fake*0.98+0.01
+                    loss = -d_fake.log().mean()
+                elif self.gan == 'wgan':
+                    loss = -d_fake.mean()
+                else:
+                    raise ValueError
+
+                d_score = d_score + loss*d_score_weight[i]/sum(d_score_weight)
+
+                if self.gan == 'gan':
+                    d_score_gstep += d_fake.detach().log().mean().item() - np.log(0.5)
+                elif self.gan == 'wgan':
+                    d_score_gstep += d_fake.detach().mean().item()
+                else:
+                    raise ValueError
+
+            d_score_gstep /= n_cr+1
+
+            if self.training:
+                d_score = d_score + self.regularizer.compute(y_hat=x_fake,y_true=x_input)
+
+            return d_score,d_score_gstep
 
         else:
             print('step is not correctly defined')
             raise ValueError
-
-        return d_score
 
 
 ##############################################################################
@@ -660,7 +667,8 @@ class GANHandler(ModelHandler):
 
             optimizer.zero_grad()
             x_fake = model(X)
-            loss   = _loss(x_fake=x_fake,x_true=X,gan_step=gan_step)
+
+            loss,loss_gstep = _loss(x_fake=x_fake,x_true=X,gan_step=gan_step)
 
             loss.backward()
 
@@ -671,7 +679,7 @@ class GANHandler(ModelHandler):
                 for p in d_net_params():
                     p.data.clamp_(-0.01,0.01)
 
-            train_loss += loss.item()
+            train_loss += loss_gstep
 
         model.eval()
         val_loss = 0.0
@@ -680,9 +688,9 @@ class GANHandler(ModelHandler):
                 X,y = self._to_dev(X), self._to_dev(y)
 
                 x_fake = model(X)
-                loss   = _loss(x_fake=x_fake,x_true=X,gan_step='g_step')
+                loss,loss_gstep = _loss(x_fake=x_fake,x_true=X,gan_step='g_step')
 
-                val_loss += loss.item()
+                val_loss += loss_gstep
         model.train()
 
         return train_loss / len(trainloader), val_loss / len(validloader)
