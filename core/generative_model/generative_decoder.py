@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as distributions
 
-from core.layers.lib_mixer import Mixer2D
+from core.layers.lib_mixer import Mixer2D,build_mixer_block
 
 class Decoder_Distribution(nn.Module):
     def __init__(self,dim_r = 18,
@@ -62,88 +62,68 @@ class MSE(nn.Module):
     def forward(self,x_in,c_in=None):
         return x_in
 
-class Gamma(nn.Module):
+class Two_Param_PDF(nn.Module):
     def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
         super().__init__()
+    
+        self.dim_r = dim_r
+        self.dim_a = dim_a
+
+        dim0 = [dim_a,dim_a]
+        dim1 = [dim_r,dim_r]
+
+        self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
+        self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
+
+    #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
+    def forward(self,x_in):
+        x0 = x_in.permute(0,3,2,1) #Batch x Vertical x Azimuthal x Radial
+        self.param_a = self.pdf_param_a(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+        self.param_b = self.pdf_param_b(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+
+    def log_prob(self,x_in):
+        return self.pdf_model.log_prob(x_in)
+
+class Gamma(Two_Param_PDF):
+    def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm):
+        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm)
         print('Decoder is Gamma distribution')
 
-        self.dim_r = dim_r
-        self.dim_a = dim_a
-
-        dim0 = [dim_a,dim_a]
-        dim1 = [dim_r,dim_r]
-
-        self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-        self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-
-    #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def forward(self,x_in,c_in=None):
-        x0 = x_in.permute(0,3,2,1) #Batch x Vertical x Azimuthal x Radial
-        param_a = self.pdf_param_a(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
-        param_b = self.pdf_param_b(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+        super().forward(x_in)
 
-        param_a = param_a.exp()
-        param_b = param_b.exp()
+        self.param_a = self.param_a.exp()
+        self.param_b = self.param_b.exp()
 
-        self.pdf_model = distributions.Gamma(param_a,param_b)
+        self.pdf_model = distributions.Gamma(self.param_a,self.param_b)
         return self.pdf_model.rsample()
 
-    def log_prob(self,x_in):
-        return self.pdf_model.log_prob(x_in)
-
-class Normal(nn.Module):
+class Normal(Two_Param_PDF):
     def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
-        super().__init__()
+        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm)
         print('Decoder is Normal distribution')
 
-        self.dim_r = dim_r
-        self.dim_a = dim_a
-
-        dim0 = [dim_a,dim_a]
-        dim1 = [dim_r,dim_r]
-
-        self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-        self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-
-    #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def forward(self,x_in,c_in=None):
-        x0 = x_in.permute(0,3,2,1) #Batch x Vertical x Azimuthal x Radial
-        param_a = self.pdf_param_a(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
-        param_b = self.pdf_param_b(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+        super().forward(x_in)
 
-        param_b = param_b.exp()+1.e-6
+        self.param_b = self.param_b.exp()+1.e-6
 
-        self.pdf_model = distributions.Normal(param_a,param_b)
+        self.pdf_model = distributions.Normal(self.param_a,self.param_b)
         return self.pdf_model.rsample()
 
-    def log_prob(self,x_in):
-        return self.pdf_model.log_prob(x_in)
-
-class T_Normal(nn.Module):
+class T_Normal(Two_Param_PDF):
     def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
-        super().__init__()
+        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer')
         print('Decoder is Truncated Normal distribution')
 
-        self.dim_r = dim_r
-        self.dim_a = dim_a
-
-        dim0 = [dim_a,dim_a]
-        dim1 = [dim_r,dim_r]
-
-        self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-        self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-
-    #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def forward(self,x_in,c_in=None):
-        x0 = x_in.permute(0,3,2,1) #Batch x Vertical x Azimuthal x Radial
-        param_a = self.pdf_param_a(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
-        param_b = self.pdf_param_b(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+        super().forward(x_in)
 
-        param_a = param_a.exp()
-        param_b = param_b.exp()+1.e-4
+        self.param_a = self.param_a.exp()
+        self.param_b = self.param_b.exp()+1.e-4
 
-        self.pdf_model  = [distributions.Normal( param_a,param_b)]
-        self.pdf_model += [distributions.Normal(-param_a,param_b)]
+        self.pdf_model  = [distributions.Normal( self.param_a,self.param_b)]
+        self.pdf_model += [distributions.Normal(-self.param_a,self.param_b)]
         return self.pdf_model[0].rsample().abs()
 
     def log_prob(self,x_in):
@@ -154,61 +134,31 @@ class T_Normal(nn.Module):
         Log_Prob = Prob.logsumexp(dim=0)
         return Log_Prob
 
-class Laplace(nn.Module):
+class Laplace(Two_Param_PDF):
     def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
-        super().__init__()
+        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer')
         print('Decoder is Laplace distribution')
 
-        self.dim_r = dim_r
-        self.dim_a = dim_a
-
-        dim0 = [dim_a,dim_a]
-        dim1 = [dim_r,dim_r]
-
-        self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-        self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-
-    #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def forward(self,x_in,c_in=None):
-        x0 = x_in.permute(0,3,2,1) #Batch x Vertical x Azimuthal x Radial
-        param_a = self.pdf_param_a(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
-        param_b = self.pdf_param_b(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+        super().forward(x_in)
 
-        param_b = param_b.exp()+1.e-8
+        self.param_b = self.param_b.exp()+1.e-8
 
-        self.pdf_model = distributions.Laplace(param_a,param_b)
+        self.pdf_model = distributions.Laplace(self.param_a,self.param_b)
         return self.pdf_model.rsample()
 
-    def log_prob(self,x_in):
-        return self.pdf_model.log_prob(x_in)
-
-class Cauchy(nn.Module):
+class Cauchy(Two_Param_PDF):
     def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
-        super().__init__()
+        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer')
         print('Decoder is Cauchy distribution')
 
-        self.dim_r = dim_r
-        self.dim_a = dim_a
-
-        dim0 = [dim_a,dim_a]
-        dim1 = [dim_r,dim_r]
-
-        self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-        self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-
-    #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def forward(self,x_in,c_in=None):
-        x0 = x_in.permute(0,3,2,1) #Batch x Vertical x Azimuthal x Radial
-        param_a = self.pdf_param_a(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
-        param_b = self.pdf_param_b(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+        super().forward(x_in)
 
-        param_b = param_b.exp()+1.e-8
+        self.param_b = self.param_b.exp()+1.e-8
 
-        self.pdf_model = distributions.Cauchy(param_a,param_b)
+        self.pdf_model = distributions.Cauchy(self.param_a,self.param_b)
         return self.pdf_model.rsample()
-
-    def log_prob(self,x_in):
-        return self.pdf_model.log_prob(x_in)
 
 class Mixture(nn.Module):
     def __init__(self,dim_r,dim_a,dim_v,dim_c,mlp_ratio,mlp_layers,mixture=['normal','gamma'],fix_mix=False,norm='layer'):
