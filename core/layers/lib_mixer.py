@@ -47,21 +47,28 @@ class Mixer2D(nn.Module):
 
     #input x_in: tensor of which last two dimenisons are ..... x dim_x0[0] x dim_x1[0]
     #output    : tensor of the same dimension with x_in
-    def forward(self,x_in,shift=0.0):
+    def forward(self,x_in,shift=None):
 
-        z0 = x_in + shift
+        z0 = x_in
 
         if self.adapter != None:
             z1 = self.adapter[0](z0).transpose(-1,-2)
             z0 = self.adapter[1](z1).transpose(-1,-2)
+
+        res = z0
         
+        if shift != None:
+            s0 = shift
+            if self.adapter != None:
+                s1 = self.adapter[0](s0).permute(-1,-2)
+                s0 = self.adapter[1](s1).permute(-1,-2)
+            z0 = z0 + s0
+
         for i in range(len(self.x0_net)):
+            z1 = self.x1_net[i](z0) .transpose(-1,-2)
+            z0 = self.x0_net[i](z1) .transpose(-1,-2)
             if self.res_conn:
-                z1 = (z0+self.x1_net[i](z0)).transpose(-1,-2)
-                z0 = (z1+self.x0_net[i](z1)).transpose(-1,-2)
-            else:
-                z1 =     self.x1_net[i](z0) .transpose(-1,-2)
-                z0 =     self.x0_net[i](z1) .transpose(-1,-2)
+                z0 = z0 + res
 
         return z0
   
@@ -100,24 +107,41 @@ class Mixer3D(nn.Module):
 
     #input x_in: tensor of which last two dimenisons are ..... x dim_x0[0] x dim_x1[0] x dim_x2[0]
     #output    : tensor of dimension                     ..... x dim_x0[1] x dim_x1[1] x dim_x2[1]
-    def forward(self,x_in,shift=0.0):
+    def forward(self,x_in,shift=None):
 
-        z0 = x_in + shift
+        z0 = x_in
 
         if self.adapter != None:
             z1 = self.adapter[0](z0).permute(0,3,1,2)
             z2 = self.adapter[1](z1).permute(0,3,1,2)
             z0 = self.adapter[2](z2).permute(0,3,1,2)
 
+        res = z0
+
+        if shift != None:
+            s0 = shift
+            if self.adapter != None:
+                s1 = self.adapter[0](s0).permute(0,3,1,2)
+                s2 = self.adapter[1](s1).permute(0,3,1,2)
+                s0 = self.adapter[2](s2).permute(0,3,1,2)
+            z0 = z0 + s0
+
         for i in range(len(self.x0_net)):
+            z1 = self.x2_net[i](z0).permute(0,3,1,2)
+            z2 = self.x1_net[i](z1).permute(0,3,1,2)
+            z0 = self.x0_net[i](z2).permute(0,3,1,2)
             if self.res_conn:
-                z1 = (z0+self.x2_net[i](z0)).permute(0,3,1,2)
-                z2 = (z1+self.x1_net[i](z1)).permute(0,3,1,2)
-                z0 = (z2+self.x0_net[i](z2)).permute(0,3,1,2)
-            else:
-                z1 =     self.x2_net[i](z0) .permute(0,3,1,2)
-                z2 =     self.x1_net[i](z1) .permute(0,3,1,2)
-                z0 =     self.x0_net[i](z2) .permute(0,3,1,2)
+                z0 = z0 +res
+
+        #for i in range(len(self.x0_net)):
+        #    if self.res_conn:
+        #        z1 = (z0+self.x2_net[i](z0)).permute(0,3,1,2)
+        #        z2 = (z1+self.x1_net[i](z1)).permute(0,3,1,2)
+        #        z0 = (z2+self.x0_net[i](z2)).permute(0,3,1,2)
+        #    else:
+        #        z1 =     self.x2_net[i](z0) .permute(0,3,1,2)
+        #        z2 =     self.x1_net[i](z1) .permute(0,3,1,2)
+        #        z0 =     self.x0_net[i](z2) .permute(0,3,1,2)
         
         return z0
   
@@ -353,8 +377,7 @@ def build_mixer_block(dim,activation,mlp_ratio,mlp_layers,gated_attn,norm='layer
         if gated_attn:
             mlp += [GatedAttention(d1)]
         if norm == 'layer':
-            #mlp += [nn.LayerNorm(dim,elementwise_affine=False, bias=False)]
-            mlp += [nn.LayerNorm(d1,elementwise_affine=False, bias=False)]
+            mlp += [nn.LayerNorm(dim,elementwise_affine=False, bias=False)]
         mlp += [nn.Linear(d1,d_mlp),activation()]
         mlp += [nn.Linear(d_mlp,d1)]
         net += [nn.Sequential(*mlp)]

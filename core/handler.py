@@ -495,9 +495,11 @@ class ValidationPlotCallback:
             print(f'{self.handler._rank}:Plotting..')
 
             self.handler._set_model_inference()
+            self.handler._model.eval()
             with torch.no_grad():
                 x_in = self.handler._to_dev(self.valid_data)
                 generated_events = self.handler.generate(x_in)
+            self.handler._model.train()
 
             str_out = f'data max {self.valid_data[0].max().item():.3f} and '
             str_out+= f'data min {self.valid_data[0].min().item():.3f}'

@@ -41,6 +41,7 @@ class GAN(nn.Module):
                  grad_norm_coef = 0,             #penalty for the gradient norm
                  cr_gan = 0,                     #consistency regularization
                  pretrain_epoch = 0,             #number of pretraining steps
+                 final_layer=False,              #add a final mixer layer
                  ):
 
         super().__init__()
@@ -77,6 +78,15 @@ class GAN(nn.Module):
 
         print('Prior Distribution is '+prior_distribution)
 
+        if final_layer:
+            self.final = Mixer3D(dim_x0 = [dim_r,dim_r],
+                                 dim_x1 = [dim_a,dim_a], 
+                                 dim_x2 = [dim_v,dim_v],
+                                 mlp_ratio=3, mlp_layers=1,res_conn=False,norm='identity')
+        else:
+            self.final = None
+                                 
+
         #Define Prior
         #input_dim = self.model.decoder_input
         input_dim = torch.zeros(1,dim_r,dim_a,dim_v)
@@ -96,7 +106,9 @@ class GAN(nn.Module):
 
         eps = self.prior(cond_var.size(0),cond_var)
 
-        x_fake = self.model(eps,cond_var) #*cond_var[:,0].view(-1,1,1,1)
+        x_fake = self.model(eps,cond_var)
+        if self.final:
+            x_fake = self.final(x_fake)
 
         return x_fake
 
@@ -137,34 +149,30 @@ class GAN(nn.Module):
             n_cr = 0
         else:
             n_cr = len(self.d_net.cr_d_net)
-        d_score_weight = [1.0] + [10.0 for i in range(n_cr)]
+        d_score_weight = [1.0] + [1.0 for i in range(n_cr)]
 
         #Discriminator Step
         if gan_step == 'd_step':
             x_fake = x_fake.detach()
-            x_perm = x_input[torch.randperm(x_input.size(0))]
 
-            x_in = torch.cat([x_input ,x_fake  ,x_perm  ])
-            c_in = torch.cat([cond_var,cond_var,cond_var])
+            x_in = torch.cat([x_input ,x_fake  ])
+            c_in = torch.cat([cond_var,cond_var])
             
-            out = self.d_net(x_in,c_in).chunk(3*(n_cr+1),dim=0)
+            out = self.d_net(x_in,c_in).chunk(2*(n_cr+1),dim=0)
 
             d_score = 0.0
             d_score_gstep = 0.0
             for i in range(n_cr+1):
-                d_true = out[3*i  ]
-                d_fake = out[3*i+1]
-                d_perm = out[3*i+2]
+                d_true = out[2*i  ]
+                d_fake = out[2*i+1]
 
                 if self.gan == 'gan':
                     d_true = d_true*0.98+0.01
                     d_fake = d_fake*0.98+0.01
-                    d_perm = d_perm*0.98+0.01
 
-                    loss = -(d_true.log().mean()+d_fake.mul(-1).add(1).log().mean()) \
-                           - d_perm.mul(-1).add(1).log().mean()
+                    loss = -(d_true.log().mean()+d_fake.mul(-1).add(1).log().mean())
                 elif self.gan == 'wgan':
-                    loss = -(d_true - d_fake).mean() + d_perm.mean()
+                    loss = -(d_true - d_fake).mean()
                 else:
                     raise ValueError
 
@@ -229,7 +237,7 @@ class GAN(nn.Module):
 #   Discriminator Network
 ##############################################################################
 class D_Net(nn.Module):
-    def __init__(self,dim_r,dim_a,dim_v,dim_c,mlp_ratio=4,mlp_layers=2,activation=nn.SiLU,gan_model='gan',add_filter=False,cr_gan=0,res_conn=True,norm='layer'):
+    def __init__(self,dim_r,dim_a,dim_v,dim_c,mlp_ratio=4,mlp_layers=2,activation=nn.SiLU,gan_model='gan',add_filter=None,cr_gan=0,res_conn=True,norm='layer'):
         super().__init__()
 
         self.module = DNet_Core(dim_x0 = dim_r,   \
@@ -244,35 +252,38 @@ class D_Net(nn.Module):
 
         d_model = dim_v[-1]*dim_r[-1]*dim_a[-1]
 
-        if add_filter:
-            self.highpass = None
-            #self.highpass = DNet_Core(dim_x0 = dim_r,   \
-            #                          dim_x1 = dim_a,   \
-            #                          dim_x2 = dim_v,   \
-            #                          dim_c  = dim_c,   \
-            #                          mlp_ratio  = mlp_ratio,  \
-            #                          mlp_layers = mlp_layers, \
-            #                          activation = activation)
-            #d_model = d_model + dim_v[-1]*dim_r[-1]*dim_a[-1]
+        self.highpass = None
+        self.logtrans = None
 
-            #self.logtrans = None
-            self.logtrans = DNet_Core(dim_x0 = dim_r,   \
-                                      dim_x1 = dim_a,   \
-                                      dim_x2 = dim_v,   \
-                                      dim_c  = dim_c,   \
-                                      mlp_ratio  = mlp_ratio,  \
-                                      mlp_layers = mlp_layers, \
-                                      activation = activation, \
-                                      res_conn = res_conn,     \
-                                      norm = norm)
+        if add_filter != None :
+            if add_filter == 'highpass':
+                self.highpass = DNet_Core(dim_x0 = dim_r,   \
+                                          dim_x1 = dim_a,   \
+                                          dim_x2 = dim_v,   \
+                                          dim_c  = dim_c,   \
+                                          mlp_ratio  = mlp_ratio,  \
+                                          mlp_layers = mlp_layers, \
+                                          activation = activation, \
+                                          res_conn = res_conn,     \
+                                          norm = norm)
+            elif add_filter == 'logtrans':
+                self.logtrans = DNet_Core(dim_x0 = dim_r,   \
+                                          dim_x1 = dim_a,   \
+                                          dim_x2 = dim_v,   \
+                                          dim_c  = dim_c,   \
+                                          mlp_ratio  = mlp_ratio,  \
+                                          mlp_layers = mlp_layers, \
+                                          activation = activation, \
+                                          res_conn = res_conn,     \
+                                          norm = norm)
+            else:
+                print(f'filter {add_filter} is not defined')
+                raise ValueError
             d_model = d_model + dim_v[-1]*dim_r[-1]*dim_a[-1]
-        else:
-            self.highpass = None
-            self.logtrans = None
 
-        self.d_score = nn.Sequential(nn.Linear(d_model,64),activation(),
-                                     nn.Linear(    64,64),activation(),
-                                     nn.Linear(    64, 1))
+        self.d_score = nn.Sequential(nn.Linear(d_model,256),activation(),
+                                     nn.Linear(256,256),activation(),
+                                     nn.Linear(256,  1))
         if gan_model == 'gan':
             self.d_score.add_module('scale',nn.Sigmoid())
 
@@ -313,8 +324,7 @@ class D_Net(nn.Module):
         z0 = self.module(x_in,c_in).reshape(nb,-1)
 
         if self.highpass != None:
-            #x0 = (x_in/2).pow(4)
-            x0 = x_in.pow(2)
+            x0 = x_in.pow(3)
             x1 = self.highpass(x0,c_in).reshape(nb,-1)
             z0 = torch.cat([z0,x1],dim=1)
 
@@ -413,13 +423,15 @@ class DNet_Core(nn.Module):
 
         z0 = x_in
         for i in range(len(self.module)):
-            z0 = self.pos_emb[i](c_in) + z0*(self.scale_emb[i](c_in)+1)
-            z0 = self.module[i](z0)
+            b = self.  pos_emb[i](c_in)
+            s = self.scale_emb[i](c_in)
+
+            z0 = self.module[i](b+(s+1)*z0)
 
         return z0
 
 class Cond_Net(nn.Module):
-    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,activation=nn.SiLU,norm='layer'):
+    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,activation=nn.SiLU,norm=False):
         super().__init__()
 
         self.dim_c  = dim_c
@@ -453,7 +465,7 @@ class Cond_Net(nn.Module):
         y0 = x0.unsqueeze(-1).repeat(1,1,self.dim_x1)   + x1.unsqueeze(1)
         y1 = y0.unsqueeze(-1).repeat(1,1,1,self.dim_x2) + x2.unsqueeze(1).unsqueeze(1)
 
-        if self.norm == 'layer':
+        if self.norm:
             y1 = F.layer_norm(y1,[self.dim_x0,self.dim_x1,self.dim_x2])
 
         return y1
@@ -472,18 +484,17 @@ class CR_D_Net(nn.Module):
         self.pos_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
                                      nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                      nn.Linear(64,64),activation(),
-                                     nn.Linear(64,64))
+                                     nn.Linear(64,128))
 
         self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
                                        nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                        nn.Linear(64,64),activation(),
-                                       nn.Linear(64,64))
+                                       nn.Linear(64,128))
 
         self.encoder = nn.Sequential(nn.Linear(dim_x,128),activation(),
-                                     nn.Linear(128,128),activation(),
-                                     nn.Linear(128,64))
+                                     nn.Linear(128,128))
 
-        self.score= nn.Sequential(nn.Linear( 64,128),activation(),
+        self.score= nn.Sequential(nn.Linear(128,128),activation(),
                                   nn.Linear(128,128),activation(),
                                   nn.Linear(128,  1))
 
@@ -531,19 +542,19 @@ class Total_E_D_Net(nn.Module):
         self.pos_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
                                      nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                      nn.Linear(64,64),activation(),
-                                     nn.Linear(64,32))
+                                     nn.Linear(64,64))
 
         self.scale_emb = nn.Sequential(nn.Linear(dim_c,64),activation(),
                                        nn.LayerNorm(64,elementwise_affine=False, bias=False),
                                        nn.Linear(64,64),activation(),
-                                       nn.Linear(64,32))
+                                       nn.Linear(64,64))
 
-        self.encoder = nn.Sequential(nn.Linear( 1,32),activation(),
-                                     nn.Linear(32,32))
+        self.encoder = nn.Sequential(nn.Linear( 1,64),activation(),
+                                     nn.Linear(64,64))
 
-        self.score= nn.Sequential(nn.Linear( 32,128),activation(),
-                                  nn.Linear(128,128),activation(),
-                                  nn.Linear(128,  1))
+        self.score= nn.Sequential(nn.Linear(64,64),activation(),
+                                  nn.Linear(64,64),activation(),
+                                  nn.Linear(64, 1))
 
         if gan_model == 'gan':
             self.score.add_module('scale',nn.Sigmoid())

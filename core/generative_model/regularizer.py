@@ -14,13 +14,18 @@
 # limitations under the License.
 #
 
+import torch
+import torch.nn.functional as F
+
 class regularizer:
-    def __init__(self,reg_model='none',reg_coef=0.0):
+    def __init__(self,reg_model='none',reg_coef=1.0):
         self.reg_coef = reg_coef
         if reg_model == 'moment_diff':
             self.reg_model = moment_diff
         elif reg_model == 'mean_diff':
             self.reg_model = mean_diff
+        elif reg_model == 'min_max':
+            self.reg_model = min_max
         elif reg_model == 'none':
             self.reg_model = null_reg
         else:
@@ -36,27 +41,42 @@ def null_reg(y_hat,y_true):
 def mean_diff(y_hat,y_true):
 
     #first moment
-    m0 = (y_true.mean((1,2)  )-y_hat.mean((1,2))  ).pow(2).div(20).tanh().mul(20).mean()
-    m1 = (y_true.mean((1,3)  )-y_hat.mean((1,3))  ).pow(2).div(20).tanh().mul(20).mean()
-    m2 = (y_true.mean((2,3)  )-y_hat.mean((2,3))  ).pow(2).div(20).tanh().mul(20).mean()
-    m3 = (y_true.mean((1,2,3))-y_hat.mean((1,2,3))).pow(2).div(20).tanh().mul(20).mean()
+    m0 = (y_true.mean((1,2)  )-y_hat.mean((1,2))  ).pow(2).mean()
+    m1 = (y_true.mean((1,3)  )-y_hat.mean((1,3))  ).pow(2).mean()
+    m2 = (y_true.mean((2,3)  )-y_hat.mean((2,3))  ).pow(2).mean()
+    m3 = (y_true.mean((1,2,3))-y_hat.mean((1,2,3))).pow(2).mean()
 
     out = m0+m1+m2+m3
     return out
 
 def moment_diff(y_hat,y_true):
 
-    reg = 0
-    for m in range(4):
-        for i in range(3):
-            m_true = get_moments(y_true,i+1,m+1)
-            m_hat  = get_moments(y_hat ,i+1,m+1)
-            reg = reg +(m_true-m_hat).pow(2).div(20).tanh().mul(20).mean()
+    avg_dim = [(1,2),(1,3),(2,3)]
 
+    reg = 0
+    for m in [2,4]:
+        for dim in avg_dim:
+            m_true = get_moments(y_true,avg_dim=dim,order=m) + 1.e-2
+            m_hat  = get_moments(y_hat ,avg_dim=dim,order=m) + 1.e-2
+
+            reg += (m_hat.log()-m_true.log()+(m_true/m_hat)).mean()
+
+            #reg = reg +(m_true-m_hat).pow(2).mean()
             #print(f'moment {m} for x{i} has max {m_true.max().item()}')
     return reg
 
 
 def get_moments(x_in,avg_dim,order=1):
-    x_out  = x_in.pow(order).mean(avg_dim)
+    if order == 1:
+        x_out = x_in.mean(avg_dim)
+    else:
+        x_out = x_in - x_in.mean(avg_dim,keepdim=True)
+        x_out = x_out.pow(order).mean(avg_dim)
     return x_out
+
+def min_max(y_hat,y_true):
+    #regularize by maximum and mininum values
+    x_max = F.relu(y_hat - y_true.amax(dim=(1,2,3),keepdim=True))
+    x_min = F.relu(y_true.amin(dim=(1,2,3),keepdim=True) - y_hat)
+    reg = x_max.pow(2).sum()/(x_max.count_nonzero()+1.e-2) + x_min.pow(2).sum()/(x_min.count_nonzero()+1.e-2)
+    return reg

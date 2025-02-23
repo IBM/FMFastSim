@@ -36,26 +36,49 @@ class VAE(nn.Module):
         dim_a = self.model.dim_a
         dim_v = self.model.dim_v
 
+        dim_c = self.model.dim_c
+        dim_z = self.model.decoder_input.size(-1)
+
         pdf = decoder_distribution
 
-        self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,pdf=pdf)
+        self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,dim_c=dim_c,pdf=pdf)
 
-    def forward(self, inputs):
+        self.z_mu = nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),
+                                  nn.Linear(  256,256),nn.SiLU(),
+                                  nn.Linear(  256,dim_z))
+
+        self.z_logvar= nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),
+                                     nn.Linear(  256,256),nn.SiLU(),
+                                     nn.Linear(  256,dim_z))
+
+
+    def forward(self, X):
 
         x_input, cond_var = self.prepare_input(X)
 
-        if x_input == None:
-            z = torch.zeros_like(self.model.decoder_input,device=e_input.device) \
-                     .repeat_interleave(cond_var.size(0),dim=0)
-            z.normal_()
-        else:
+        if self.training:
             mu, var = self.model.encoding(x_input)
             self.kl_loss  = (var.log() + (1+mu.pow(2))/var).mean()
 
             z = mu + torch.randn_like(var)*var.sqrt()
 
+            #train latent state distribution predictor
+            z_mu     = self.z_mu    (cond_var)
+            z_logvar = self.z_logvar(cond_var)
+            z_var    =      z_logvar.exp()
+
+            z_mse = (z_mu-z.detach()).pow(2)/z_var
+            z_nll = 0.5*(z_logvar + z_mse).mean()
+
+            self.kl_loss = (self.kl_loss + z_nll)*self.kl_coef
+        else:
+            z_mu  = self.z_mu    (cond_var)
+            z_var = self.z_logvar(cond_var).exp()
+
+            z = z_mu + torch.randn_like(z_var)*z_var.sqrt()
+
         x0    = self.model.decoding(z,cond_var)
-        x_out = self.gen_decoder(x0)
+        x_out = self.gen_decoder(x0,cond_var)
 
         return x_out
 
@@ -64,7 +87,7 @@ class VAE(nn.Module):
 
         for i in range(len(conditions)):
             if conditions[i].dim() == 1:
-                conditions[i]     = conditions[i].unsqueeze(1)
+                conditions[i] = conditions[i].unsqueeze(1)
 
         cond_var = torch.cat(conditions,dim=1)
 
@@ -79,7 +102,7 @@ class VAE(nn.Module):
 
     def loss(self,y_hat=None,y_true=None):
         nll_loss = self.gen_decoder.Loss(y_hat=y_hat,y_true=y_true)
-        vae_loss = nll_loss + self.kl_loss*self.kl_coef
+        vae_loss = nll_loss + self.kl_loss
         reg      = self.regularizer.compute(y_hat,y_true)
         return vae_loss+reg
 
