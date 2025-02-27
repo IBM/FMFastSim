@@ -14,6 +14,7 @@ class Decoder_Distribution(nn.Module):
                       mlp_layers=3,
                       pdf = 'gamma',  #gamma, normal, laplace, or any mixture combination,e.g.,gamma-laplace
                       norm = 'layer',
+                      dec_type = 'mixer',
                       fix_mix=False,
         ):
 
@@ -23,19 +24,32 @@ class Decoder_Distribution(nn.Module):
 
         self.pdf_type = pdf
 
+        param_in = {'dim_r':dim_r,
+                    'dim_a':dim_a,
+                    'dim_v':dim_v,
+                    'mlp_ratio':mlp_ratio,
+                    'mlp_layers':mlp_layers,
+                    'norm':norm,
+                    'dec_type':dec_type}
+
         if self.pdf_type == 'gamma':
-            self.pdf_model =    Gamma(dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)
+            self.pdf_model =    Gamma(**param_in)
         elif self.pdf_type == 'normal':
-            self.pdf_model =   Normal(dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)
+            self.pdf_model =   Normal(**param_in)
         elif self.pdf_type == 'laplace':
-            self.pdf_model =  Laplace(dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)
+            self.pdf_model =  Laplace(**param_in)
         elif self.pdf_type == 'cauchy':
-            self.pdf_model =   Cauchy(dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)
+            self.pdf_model =   Cauchy(**param_in)
         elif self.pdf_type == 'Tnormal':
-            self.pdf_model = T_Normal(dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)
+            self.pdf_model = T_Normal(**param_in)
         elif '-' in self.pdf_type:
             mixture = self.pdf_type.split('-')
-            self.pdf_model = Mixture(dim_r,dim_a,dim_v,dim_c,mlp_ratio,mlp_layers,norm=norm,mixture=mixture,fix_mix=fix_mix)
+
+            param_mix = {'dim_c':dim_c,
+                         'mixture':mixture,
+                         'fix_mix':fix_mix}
+
+            self.pdf_model = Mixture(dist_param=param_in,mix_param=param_mix)
         elif self.pdf_type == 'mse':
             self.pdf_model = MSE()
         else:
@@ -63,30 +77,47 @@ class MSE(nn.Module):
         return x_in
 
 class Two_Param_PDF(nn.Module):
-    def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
+    def __init__(self,dim_r,dim_a,dim_v,mlp_ratio,mlp_layers,norm='layer',dec_type='mixer'):
         super().__init__()
     
         self.dim_r = dim_r
         self.dim_a = dim_a
+        self.dim_v = dim_v
+
+        self.dec_type = dec_type
 
         dim0 = [dim_a,dim_a]
         dim1 = [dim_r,dim_r]
 
-        self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
-        self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
+        if self.dec_type == 'mixer':
+            self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
+            self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
+        elif self.dec_type == 'conv':
+            norm_dim = [dim_a,dim_r,dim_v]
+            self.pdf_param = nn.Sequential(nn.LayerNorm(norm_dim,elementwise_affine=False, bias=False),
+                                           nn.Conv2d(  dim_a,4*dim_a,3,padding='same'),nn.SiLU(),
+                                           nn.Conv2d(4*dim_a,4*dim_a,3,padding='same'),nn.SiLU(),
+                                           nn.Conv2d(4*dim_a,2*dim_a,1))
+                                           
 
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def forward(self,x_in):
-        x0 = x_in.permute(0,3,2,1) #Batch x Vertical x Azimuthal x Radial
-        self.param_a = self.pdf_param_a(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
-        self.param_b = self.pdf_param_b(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+        if self.dec_type == 'mixer':
+            x0 = x_in.permute(0,3,2,1) #Batch x Vertical x Azimuthal x Radial
+            self.param_a = self.pdf_param_a(x0).permute(0,3,2,1) #Batch x Radial x Azimuthal x Vertical
+            self.param_b = self.pdf_param_b(x0).permute(0,3,2,1)
+        elif self.dec_type == 'conv':
+            x0 = x_in.permute(0,2,1,3) #Batch x Azimuthal x  Radial x Vertical
+            param = self.pdf_param(x0)
+            self.param_a = param[:,:self.dim_a,:,:].permute(0,2,1,3) #Batch x Radial x Azimuthal x Vertical
+            self.param_b = param[:,self.dim_a:,:,:].permute(0,2,1,3) #Batch x Radial x Azimuthal x Vertical
 
     def log_prob(self,x_in):
         return self.pdf_model.log_prob(x_in)
 
 class Gamma(Two_Param_PDF):
-    def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm):
-        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm)
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
         print('Decoder is Gamma distribution')
 
     def forward(self,x_in,c_in=None):
@@ -99,8 +130,8 @@ class Gamma(Two_Param_PDF):
         return self.pdf_model.rsample()
 
 class Normal(Two_Param_PDF):
-    def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
-        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm)
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
         print('Decoder is Normal distribution')
 
     def forward(self,x_in,c_in=None):
@@ -112,8 +143,8 @@ class Normal(Two_Param_PDF):
         return self.pdf_model.rsample()
 
 class T_Normal(Two_Param_PDF):
-    def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
-        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer')
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
         print('Decoder is Truncated Normal distribution')
 
     def forward(self,x_in,c_in=None):
@@ -135,8 +166,8 @@ class T_Normal(Two_Param_PDF):
         return Log_Prob
 
 class Laplace(Two_Param_PDF):
-    def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
-        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer')
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
         print('Decoder is Laplace distribution')
 
     def forward(self,x_in,c_in=None):
@@ -148,8 +179,8 @@ class Laplace(Two_Param_PDF):
         return self.pdf_model.rsample()
 
 class Cauchy(Two_Param_PDF):
-    def __init__(self,dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer'):
-        super().__init__(dim_r,dim_a,mlp_ratio,mlp_layers,norm='layer')
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
         print('Decoder is Cauchy distribution')
 
     def forward(self,x_in,c_in=None):
@@ -161,35 +192,35 @@ class Cauchy(Two_Param_PDF):
         return self.pdf_model.rsample()
 
 class Mixture(nn.Module):
-    def __init__(self,dim_r,dim_a,dim_v,dim_c,mlp_ratio,mlp_layers,mixture=['normal','gamma'],fix_mix=False,norm='layer'):
+    def __init__(self,dist_param,mix_param):
         super().__init__()
 
         mix_dist = []
-        for p in mixture:
+        for p in mix_param['mixture']:
             if p == 'gamma':
-                mix_dist += [Gamma   (dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)]
+                mix_dist += [Gamma   (**dist_param)]
             elif p == 'normal':
-                mix_dist += [Normal  (dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)]
+                mix_dist += [Normal  (**dist_param)]
             elif p == 'laplace':
-                mix_dist += [Laplace (dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)]
+                mix_dist += [Laplace (**dist_param)]
             elif p == 'cauchy':
-                mix_dist += [Cauchy  (dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)]
+                mix_dist += [Cauchy  (**dist_param)]
             elif p == 'Tnormal':
-                mix_dist += [T_Normal(dim_r,dim_a,mlp_ratio,mlp_layers,norm=norm)]
+                mix_dist += [T_Normal(**dist_param)]
             else:
                 print('wrong distribution is given: '+p)
                 os.exit(-1)
 
-        self.d0 = dim_r
-        self.d1 = dim_a
-        self.d2 = dim_v
+        self.d0 = dist_param['dim_r']
+        self.d1 = dist_param['dim_a']
+        self.d2 = dist_param['dim_v']
 
-        self.dim_c = dim_c
+        self.dim_c = mix_param['dim_c']
 
-        self.fix_mix    = fix_mix
+        self.fix_mix    = mix_param['fix_mix']
         self.mix_dist   = nn.ModuleList(mix_dist)
-        self.mix_weight = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),nn.Linear(128,128),nn.SiLU(),
-                                        nn.Linear(128,len(mixture)),nn.Sigmoid())
+        self.mix_weight = nn.Sequential(nn.Linear(self.dim_c,128),nn.SiLU(),nn.Linear(128,128),nn.SiLU(),
+                                        nn.Linear(128,len(mix_dist)),nn.Sigmoid())
 
     def forward(self,x_in,c_in=None):
 
@@ -197,7 +228,7 @@ class Mixture(nn.Module):
             c_in = torch.zeros(x_in.size(0),self.dim_c,device=x_in.device)
         
         #self.pred_mix_weight = F.softmax(self.mix_weight(c_in),dim=-1)
-        weight = self.mix_weight(c_in) + 0.2
+        weight = self.mix_weight(c_in) + 0.3
 
         self.pred_mix_weight = weight/weight.sum(-1,keepdim=True)
         
@@ -216,17 +247,18 @@ class Mixture(nn.Module):
 
     def log_prob(self,x_in):
 
-        nb = x_in.size(0) #batch size
-        nm = self.pred_mix_weight.size(-1) #number of mixtures
+        nb = self.pred_mix_weight.size(0) #batch size
+        nm = self.pred_mix_weight.size(1) #number of mixtures
 
-        mix_weight = self.pred_mix_weight.view(nb,1,1,1,nm).expand(-1,self.d0,self.d1,self.d2,-1)
+        log_mix_weight = self.pred_mix_weight.log()
+        log_mix_weight = log_mix_weight.t().view(nm,nb,1,1,1).expand(-1,-1,self.d0,self.d1,self.d2)
 
         #if self.fix_mix:
         #    mix_weight = mix_weight.detach()
 
         Prob = []
         for i in range(len(self.mix_dist)):
-            Prob += [mix_weight[:,:,:,:,i].log() + self.mix_dist[i].log_prob(x_in)]
+            Prob += [log_mix_weight[i,:,:,:,:] + self.mix_dist[i].log_prob(x_in)]
         Prob = torch.stack(Prob,dim=0)
 
         Log_Prob = Prob.logsumexp(dim=0)

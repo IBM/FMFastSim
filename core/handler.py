@@ -257,7 +257,7 @@ class ModelHandler:
 
         if lr_scheduler['scheduler'] == 'on_plateau':
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, 'min', factor=lr_scheduler['factor'], patience=lr_scheduler['patience'])
+                optimizer, 'min', factor=lr_scheduler['factor'], patience=lr_scheduler['patience'],min_lr=1.e-6)
         elif lr_scheduler['scheduler'] == 'scheduled':
             scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 optimizer, milestones=lr_scheduler['milestones'], gamma= lr_scheduler['gamma'])

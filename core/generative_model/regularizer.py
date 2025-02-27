@@ -41,25 +41,25 @@ def null_reg(y_hat,y_true):
 def mean_diff(y_hat,y_true):
 
     #first moment
-    m0 = (y_true.mean((1,2)  )-y_hat.mean((1,2))  ).pow(2).mean()
-    m1 = (y_true.mean((1,3)  )-y_hat.mean((1,3))  ).pow(2).mean()
-    m2 = (y_true.mean((2,3)  )-y_hat.mean((2,3))  ).pow(2).mean()
-    m3 = (y_true.mean((1,2,3))-y_hat.mean((1,2,3))).pow(2).mean()
+    avg_dim = [(1,2),(1,3),(2,3),(1,2,3)]
 
-    out = m0+m1+m2+m3
-    return out
+    reg = 0
+    for dim in avg_dim:
+        reg = reg + (y_true.mean(avg_dim) - y_hat.mean(avg_dim)).pow(2).mean()
+
+    return reg
 
 def moment_diff(y_hat,y_true):
 
     avg_dim = [(1,2),(1,3),(2,3)]
 
     reg = 0
-    for m in [2,4]:
+    for m in [1,2,4]:
         for dim in avg_dim:
-            m_true = get_moments(y_true,avg_dim=dim,order=m) + 1.e-2
-            m_hat  = get_moments(y_hat ,avg_dim=dim,order=m) + 1.e-2
+            m_true = get_moments(y_true,avg_dim=dim,order=m) + 1.e-3
+            m_hat  = get_moments(y_hat ,avg_dim=dim,order=m) + 1.e-3
 
-            reg += (m_hat.log()-m_true.log()+(m_true/m_hat)).mean()
+            reg += (m_hat.log()-m_true.log()+m_true/m_hat).mean()
 
             #reg = reg +(m_true-m_hat).pow(2).mean()
             #print(f'moment {m} for x{i} has max {m_true.max().item()}')

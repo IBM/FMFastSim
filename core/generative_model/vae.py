@@ -24,7 +24,7 @@ from core.generative_model.generative_decoder import Decoder_Distribution
 from core.generative_model.regularizer import regularizer
 
 class VAE(nn.Module):
-    def __init__(self, network, kl_coef=1.0, reg_coef=0.0, reg_model = 'none', decoder_distribution = 'gamma'):
+    def __init__(self, network, kl_coef=1.0, reg_coef=0.0, reg_model = 'none', decoder_distribution = 'gamma',mlp_ratio=4,mlp_layers=3,dec_type='mixer'):
         super().__init__()
 
         self.model = network
@@ -41,7 +41,7 @@ class VAE(nn.Module):
 
         pdf = decoder_distribution
 
-        self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,dim_c=dim_c,pdf=pdf)
+        self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,dim_c=dim_c,pdf=pdf,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,dec_type=dec_type)
 
         self.z_mu = nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),
                                   nn.Linear(  256,256),nn.SiLU(),
@@ -70,7 +70,7 @@ class VAE(nn.Module):
             z_mse = (z_mu-z.detach()).pow(2)/z_var
             z_nll = 0.5*(z_logvar + z_mse).mean()
 
-            self.kl_loss = (self.kl_loss + z_nll)*self.kl_coef
+            self.kl_loss = self.kl_loss*self.kl_coef + z_nll
         else:
             z_mu  = self.z_mu    (cond_var)
             z_var = self.z_logvar(cond_var).exp()
@@ -103,8 +103,9 @@ class VAE(nn.Module):
     def loss(self,y_hat=None,y_true=None):
         nll_loss = self.gen_decoder.Loss(y_hat=y_hat,y_true=y_true)
         vae_loss = nll_loss + self.kl_loss
-        reg      = self.regularizer.compute(y_hat,y_true)
-        return vae_loss+reg
+        if self.training:
+            vae_loss = vae_loss + self.regularizer.compute(y_hat,y_true)
+        return vae_loss
 
 
 class VAEHandler(ModelHandler):

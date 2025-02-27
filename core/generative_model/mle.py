@@ -20,45 +20,74 @@ import torch.nn.functional as F
 
 from core.handler import ModelHandler
 
-from core.generative_model.prior_dist import prior_dist
 from core.generative_model.generative_decoder import Decoder_Distribution
 from core.generative_model.regularizer import regularizer
 
 class MLE(nn.Module):
-    def __init__(self, network, prior_distribution = 'std', decoder_distribution = 'gamma', fix_mixture = False,
-                 reg_coef = 0.0, reg_model = 'none'):
+    def __init__(self, network, kl_coef=1.0, reg_coef=0.0, reg_model = 'none', decoder_distribution = 'gamma',mlp_ratio=4,mlp_layers=3,dec_type='mixer'):
         super().__init__()
 
         self.model = network
+        self.kl_coef = kl_coef
+
+        self.regularizer = regularizer(reg_model,reg_coef)
 
         dim_r = self.model.dim_r
         dim_a = self.model.dim_a
         dim_v = self.model.dim_v
 
-        print('Prior Distribution is '+p_dist)
+        dim_c = self.model.dim_c
+        dim_z = self.model.decoder_input.size(-1)
 
-        self.regularizer = regularizer(reg_model,reg_coef)
+        pdf = decoder_distribution
 
-        self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,pdf=pdf,fix_mix=fix_mix)
+        self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,dim_c=dim_c,pdf=pdf,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,dec_type=dec_type)
 
-        #Define Prior
-        self.prior = prior_dist(p_dist,self.model.decoder_input)
+        self.z_mu = nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),
+                                  nn.Linear(  256,256),nn.SiLU(),
+                                  nn.Linear(  256,dim_z))
 
-    def forward(self, inputs):
-        (x_input, e_input, angle_input, geo_input) = inputs
+        self.z_logvar= nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),
+                                     nn.Linear(  256,256),nn.SiLU(),
+                                     nn.Linear(  256,dim_z))
 
-        if e_input.dim() == 1:
-            e_input     = e_input    .unsqueeze(1)
-            angle_input = angle_input.unsqueeze(1)
 
-        c_input = torch.cat([e_input,angle_input,geo_input],dim=1)
+    def forward(self, X):
 
-        z = self.prior(nbatch=c_input.size(0))
+        x_input, cond_var = self.prepare_input(X)
 
-        x0    = self.model.decoding(z,c_input)
-        x_out = self.gen_decoder(x0)
+        #train latent state distribution predictor
+        z_mu     = self.z_mu    (cond_var)
+        z_logvar = self.z_logvar(cond_var)
+        z_var    =      z_logvar.exp()
+
+        if self.training:
+            zz = torch.randn_like(z_mu)
+
+            kl = -zz.pow(2) + (zz-z_mu).pow(2).div(z_var) + z_logvar
+
+            self.kl_loss = kl.mean()*self.kl_coef
+
+        z = z_mu + torch.randn_like(z_var)*z_var.sqrt()
+
+        x0    = self.model.decoding(z,cond_var)
+        x_out = self.gen_decoder(x0,cond_var)
 
         return x_out
+
+    def prepare_input(self,X,return_cond=False):
+        x_input, conditions = X[0], list(X[1:])
+
+        for i in range(len(conditions)):
+            if conditions[i].dim() == 1:
+                conditions[i] = conditions[i].unsqueeze(1)
+
+        cond_var = torch.cat(conditions,dim=1)
+
+        if return_cond:
+            return cond_var
+        else:
+            return x_input, cond_var
 
     def generate(self,inputs):
         x_out = self.forward(inputs)
@@ -66,15 +95,18 @@ class MLE(nn.Module):
 
     def loss(self,y_hat=None,y_true=None):
         nll_loss = self.gen_decoder.Loss(y_hat=y_hat,y_true=y_true)
-        reg      = self.regularizer.compute(y_hat,y_true)
-        return nll_loss+reg
+        vae_loss = nll_loss + self.kl_loss
+        if self.training:
+            vae_loss = vae_loss + self.regularizer.compute(y_hat,y_true)
+        return vae_loss
+
 
 class MLEHandler(ModelHandler):
     def __init__(self, gen_param, network, **kwargs):
 
         self._gen_param = gen_param
 
-        self._model = MLE(gen_param,network=network)
+        self._model = MLE(network=network,**gen_param)
         self._loss  = self._model.loss
 
         super().__init__(**kwargs)
@@ -100,7 +132,6 @@ class MLEHandler(ModelHandler):
 
         if self._rank == 0:
             torch.save({'network'    :self._model.model      .state_dict(),
-                        'prior'      :self._model.prior      .state_dict(),
                         'gen_decoder':self._model.gen_decoder.state_dict(),
                         'all_params' :self._params},
                        self.save_file)
@@ -112,9 +143,7 @@ class MLEHandler(ModelHandler):
         model_load = torch.load(self.load_file,map_location=self._device)
 
         t0 = model_load['network']
-        t1 = model_load['prior']
-        t2 = model_load['gen_decoder']
+        t1 = model_load['gen_decoder']
 
         self._model.model      .load_state_dict(t0)
-        self._model.prior      .load_state_dict(t1)
-        self._model.gen_decoder.load_state_dict(t2)
+        self._model.gen_decoder.load_state_dict(t1)

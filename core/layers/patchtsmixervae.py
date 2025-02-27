@@ -24,6 +24,8 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_utils      import PreTrainedModel
 from transformers.utils import (
@@ -1372,8 +1374,13 @@ class PatchTSMixerVAEModel(PatchTSMixerVAEPreTrainedModel):
         self.variational = config.variational
 
         if self.variational:
-            self.mu_linear = nn.Linear(self.total_embedding_size, self.total_embedding_size)
-            self.log_var_linear = nn.Linear(self.total_embedding_size, self.total_embedding_size)
+            #self.mu_linear = nn.Linear(self.total_embedding_size, self.total_embedding_size)
+            #self.log_var_linear = nn.Linear(self.total_embedding_size, self.total_embedding_size)
+            dim_mlp = config.d_model_layerwise[-1]
+            dim_exp = dim_mlp*config.expansion_factor
+            
+            self.mu      = nn.Sequential(nn.Linear(dim_mlp,dim_exp),nn.SiLU(),nn.Linear(dim_exp,dim_mlp))
+            self.log_var = nn.Sequential(nn.Linear(dim_mlp,dim_exp),nn.SiLU(),nn.Linear(dim_exp,dim_mlp))
 
         # Initialize weights and apply final processing
         if config.post_init:
@@ -1429,8 +1436,14 @@ class PatchTSMixerVAEModel(PatchTSMixerVAEPreTrainedModel):
             hidden_states = None
 
         if self.variational is True:
-            mu_hidden_flatten_state = self.mu_linear(last_hidden_flatten_state)
-            log_var_hidden_flatten_state = self.log_var_linear(last_hidden_flatten_state)
+            #mu_hidden_flatten_state = self.mu_linear(last_hidden_flatten_state)
+            #log_var_hidden_flatten_state = self.log_var_linear(last_hidden_flatten_state)
+
+            enc_in = encoder_output.last_hidden_state
+            enc_in = F.layer_norm(enc_in,(enc_in.size(-1),))
+            mu_hidden_flatten_state      = self.mu     (enc_in).flatten(start_dim=1)
+            log_var_hidden_flatten_state = self.log_var(enc_in).flatten(start_dim=1)
+
             last_hidden_flatten_state = mu_hidden_flatten_state + torch.exp(
                 0.5 * log_var_hidden_flatten_state
             ) * torch.randn_like(mu_hidden_flatten_state)

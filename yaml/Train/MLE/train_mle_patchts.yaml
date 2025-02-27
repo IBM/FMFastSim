@@ -1,0 +1,98 @@
+---
+experiment:
+    study_name: MLE_PatchTS
+    run_name:   fm_lin_tn
+    checkpoint_dir: /dccstor/kyeo_data/cern_fast_shower/chk_point
+    validation_dir: /dccstor/kyeo_data/cern_fast_shower/validation
+
+gpu_info:
+    use_gpu: True
+    use_ddp: False
+
+model_info:
+    model_type: MLE
+    network_type: PatchTSMixer
+    save_model: True
+    load_file: null              #path and file name of a trained network.
+    save_file: VAE_PatchTSM.pt   #path and file name to save the trained model.
+                                 #If null, the model is saved in chkeckpoint_dir using the default name
+    gen_param:
+        kl_coef: 1.0
+        decoder_distribution: Tnormal-Tnormal-Tnormal-Tnormal-Tnormal-Tnormal-Tnormal-Tnormal
+        dec_type: 'conv'
+        reg_model: moment_diff
+        reg_coef: 1.e-1
+    network_param:
+        dim_r: 9
+        dim_a: 16
+        dim_v: 45
+        dim_c: 10
+    #PatchTST parameters
+        patch_dim:   'v'        #patch dimension id: 'a', 'v', or 'r'  (azimuthal, vertical, ratidal)
+        channel_dim: 'a'        #channel dimension id: 'a', 'v', or 'r'  (azimuthal, vertical, ratidal)
+        reconstruction_head: False
+        encoder_resconn: False
+        decoder_resconn: False
+        expansion_factor: 4
+        num_layers: 2
+        decoder_num_layers: 3
+        dropout: 0.0
+        head_dropout: 0.0
+        #encoder compression
+        d_model_layerwise_scale: [1,0.5]
+        #decoder decompression
+        decoder_d_model_layerwise_scale: [0.5,1,1]
+        #
+        use_positional_encoding: False
+        variational: True
+        lower_bound: 0.0
+
+train_info:
+    optimizer: Adam
+    epochs: 4000
+    learning_rate: 1.e-4
+    batch_size: 256
+    lr_scheduler:
+        scheduler: scheduled
+        milestones: [400,800,1200,1600,2000]
+        gamma: 0.5
+    save_freq: 100
+    plot_freq: 50
+    plot_config:
+        - [1.57, 0,  50, 'FCCeeALLEGRO']  #theta, phi, energy, geo
+        - [1.57, 0,  50, 'FCCeeCLD'    ]  
+        - [1.57, 0,  50, 'ODD'         ] 
+        #- [1.57, 0,  50, 'Par04_PbWO4' ] 
+        - [1.57, 0,  50, 'Par04_SciPb' ]
+        - [1.57, 0,  50, 'Par04_SiW'   ]
+        - [1.57, 0, 500, 'Par04_SiW'   ]
+
+data_info:
+    dataloader: 'shower_FM_dataset'
+
+    train_path: ['/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/FCCeeALLEGRO/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/FCCeeCLD/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/ODD/training',
+                 #'/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_PbWO4/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_SciPb/training',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_SiW/training']
+
+    valid_path: ['/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/FCCeeALLEGRO/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/FCCeeCLD/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/ODD/validation',
+                 #'/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_PbWO4/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_SciPb/validation',
+                 '/dccstor/tsfm23/datasets/CERN_Fast_Shower_Ver_2/Par04_SiW/validation']
+
+    train_geo:  ['FCCeeALLEGRO','FCCeeCLD','ODD','Par04_SciPb','Par04_SiW']
+    valid_geo:  ['FCCeeALLEGRO','FCCeeCLD','ODD','Par04_SciPb','Par04_SiW']
+
+    random_geo_sampling: True
+    num_samples_epoch: 25600
+
+scale_info:
+    scale_method: 'lin_trans'  #data transformatin: lin_trans, log_trans, or bi-log_trans, ds2_log_norm
+    scale_param:
+        scale: 10
+        bias: 0.0
+    scale_by_energy: False
