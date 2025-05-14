@@ -989,8 +989,14 @@ class PatchTSMixerVAEForReconstructionHead(nn.Module):
             out_dim = config.context_length
             self.base_reconstruction_block = nn.Sequential(nn.LayerNorm(in_dim,elementwise_affine=False, bias=False),
                                                            nn.Linear( in_dim,out_dim))
-        else:
+        elif config.reconstruction_type == "patchnorm":
+            self.base_reconstruction_block = nn.Sequential(nn.LayerNorm(head_d_model,elementwise_affine=False, bias=False),
+                                                           nn.Linear(head_d_model, config.patch_length))
+        elif config.reconstruction_type == "patchwise":
             self.base_reconstruction_block = nn.Linear(head_d_model, config.patch_length)
+        else:
+            print(f'reconstruction type {config.reconstruction_type} is not defined')
+            raise ValueError
 
         self.flatten = nn.Flatten(start_dim=-2)
 

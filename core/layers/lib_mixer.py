@@ -259,78 +259,124 @@ class MixerTF_Block(nn.Module):
 ###########################################################
 #   Mixer to deal with conditioning variable
 ###########################################################
+#class Cond_Net(nn.Module):
+#    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,res_conn=True,gated_attn=False,pos=True,mode='both',norm='layer'):
+#        super().__init__()
+#
+#        self.dim_x0 = dim_x0
+#        self.dim_x1 = dim_x1
+#        self.dim_x2 = dim_x2
+#
+#        self.dim_c = dim_c
+#
+#        self.mode = mode
+#
+#        d_model = dim_x0[0]*dim_x1[0]*dim_x2[0]
+#
+#        self.embedding = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
+#                                       nn.LayerNorm(128,elementwise_affine=False, bias=False),
+#                                       nn.Linear(128,128),nn.SiLU(),
+#                                       nn.Linear(128,d_model))
+#
+#        self.  pos_mixer = None
+#        self.scale_mixer = None
+#
+#        if (self.mode=='both') or (self.mode=='pos'):
+#            module = []
+#            for i in range(len(dim_x0)-1):
+#                module += [Mixer3D(dim_x0 = dim_x0[i:i+2],
+#                                   dim_x1 = dim_x1[i:i+2],
+#                                   dim_x2 = dim_x2[i:i+2],
+#                                   mlp_ratio  = 3,
+#                                   mlp_layers = 3,
+#                                   activation=nn.SiLU,
+#                                   gated_attn=gated_attn,
+#                                   res_conn=res_conn,
+#                                   norm=norm)]
+#
+#            self.pos_mixer = nn.Sequential(*module)
+#
+#        if (self.mode=='both') or (self.mode=='scale'):
+#            module = []
+#            for i in range(len(dim_x0)-1):
+#                module += [Mixer3D(dim_x0 = dim_x0[i:i+2],
+#                                   dim_x1 = dim_x1[i:i+2],
+#                                   dim_x2 = dim_x2[i:i+2],
+#                                   mlp_ratio  = 3,
+#                                   mlp_layers = 3,
+#                                   activation=nn.SiLU,
+#                                   gated_attn=gated_attn,
+#                                   res_conn=res_conn,
+#                                   norm=norm)]
+#
+#            self.scale_mixer = nn.Sequential(*module)
+#
+#    def forward(self,c_in,scale=True):
+#        nb    = c_in.size(0)
+#
+#        d0 = self.dim_x0[0]
+#        d1 = self.dim_x1[0]
+#        d2 = self.dim_x2[0]
+#
+#        emb = self.embedding(c_in).view(nb,d0,d1,d2)
+#
+#        if self.pos_mixer:
+#            pos_emb = self.pos_mixer(emb)
+#
+#        if self.scale_mixer:
+#            scale_emb = self.scale_mixer(emb)
+#
+#        if self.mode == 'both':
+#            return pos_emb, scale_emb
+#        else:
+#            out = pos_emb if self.mode == 'pos' else scale_emb
+#            return out
+
 class Cond_Net(nn.Module):
-    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,res_conn=True,gated_attn=False,pos=True,mode='both',norm='layer'):
+    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,activation=nn.SiLU,norm=False):
         super().__init__()
 
+        self.dim_c  = dim_c
         self.dim_x0 = dim_x0
         self.dim_x1 = dim_x1
         self.dim_x2 = dim_x2
 
-        self.dim_c = dim_c
+        self.norm = norm
 
-        self.mode = mode
+        self.x0_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                    #nn.Linear(32,32),activation(),
+                                    nn.Linear(64,dim_x0))
 
-        d_model = dim_x0[0]*dim_x1[0]*dim_x2[0]
+        self.x1_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                    #nn.Linear(32,32),activation(),
+                                    nn.Linear(64,dim_x1))
 
-        self.embedding = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                       nn.LayerNorm(128,elementwise_affine=False, bias=False),
-                                       nn.Linear(128,128),nn.SiLU(),
-                                       nn.Linear(128,d_model))
+        self.x2_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
+                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
+                                    #nn.Linear(32,32),activation(),
+                                    nn.Linear(64,dim_x2))
 
-        self.  pos_mixer = None
-        self.scale_mixer = None
+        self.conv_net = nn.Sequential(nn.Conv2d(self.dim_x0,32,2,padding='same'),activation(),
+                                      nn.Conv2d(32,self.dim_x0,2,padding='same'))
 
-        if (self.mode=='both') or (self.mode=='pos'):
-            module = []
-            for i in range(len(dim_x0)-1):
-                module += [Mixer3D(dim_x0 = dim_x0[i:i+2],
-                                   dim_x1 = dim_x1[i:i+2],
-                                   dim_x2 = dim_x2[i:i+2],
-                                   mlp_ratio  = 3,
-                                   mlp_layers = 3,
-                                   activation=nn.SiLU,
-                                   gated_attn=gated_attn,
-                                   res_conn=res_conn,
-                                   norm=norm)]
+    def forward(self,c_in):
+        #create dimensional embedding
+        x0 = self.x0_net(c_in)
+        x1 = self.x1_net(c_in)
+        x2 = self.x2_net(c_in)
 
-            self.pos_mixer = nn.Sequential(*module)
+        y0 = x0.unsqueeze(-1).repeat(1,1,self.dim_x1)   + x1.unsqueeze(1)
+        y1 = y0.unsqueeze(-1).repeat(1,1,1,self.dim_x2) + x2.unsqueeze(1).unsqueeze(1)
 
-        if (self.mode=='both') or (self.mode=='scale'):
-            module = []
-            for i in range(len(dim_x0)-1):
-                module += [Mixer3D(dim_x0 = dim_x0[i:i+2],
-                                   dim_x1 = dim_x1[i:i+2],
-                                   dim_x2 = dim_x2[i:i+2],
-                                   mlp_ratio  = 3,
-                                   mlp_layers = 3,
-                                   activation=nn.SiLU,
-                                   gated_attn=gated_attn,
-                                   res_conn=res_conn,
-                                   norm=norm)]
+        y1 = self.conv_net(y1)
 
-            self.scale_mixer = nn.Sequential(*module)
+        if self.norm:
+            y1 = F.layer_norm(y1,[self.dim_x0,self.dim_x1,self.dim_x2])
 
-    def forward(self,c_in,scale=True):
-        nb    = c_in.size(0)
+        return y1
 
-        d0 = self.dim_x0[0]
-        d1 = self.dim_x1[0]
-        d2 = self.dim_x2[0]
-
-        emb = self.embedding(c_in).view(nb,d0,d1,d2)
-
-        if self.pos_mixer:
-            pos_emb = self.pos_mixer(emb)
-
-        if self.scale_mixer:
-            scale_emb = self.scale_mixer(emb)
-
-        if self.mode == 'both':
-            return pos_emb, scale_emb
-        else:
-            out = pos_emb if self.mode == 'pos' else scale_emb
-            return out
 
 #####################
 #   Utility layers

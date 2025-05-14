@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from core.layers.layer import layer
+from core.layers.lib_mixer import Cond_Net
 from core.layers.patchtsmixervae import PatchTSMixerVAEConfig,PatchTSMixerVAEDecoderWithReconstructionHead,PatchTSMixerVAEModel, PatchTSMixerVAEDecoder
 
 import einops
@@ -176,28 +177,14 @@ class PatchTSMixer(layer):
 
         enc_emb_size = dim_v*dim_a*dim_r
         dec_emb_size = enc_out.last_hidden_flatten_state.size(-1)
-
         self.decoder_input = torch.zeros(1,dec_emb_size)
 
-        self.dec_pos_emb   = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(), 
-                                           nn.LayerNorm(128,elementwise_affine=False, bias=False),
-                                           nn.Linear(128,128),nn.SiLU(),
-                                           nn.Linear(128,dec_emb_size))
+        self.enc_pos_emb   = Cond_Net(self.enc_dim[0],self.enc_dim[1],self.enc_dim[2],dim_c)
+        self.enc_scale_emb = Cond_Net(self.enc_dim[0],self.enc_dim[1],self.enc_dim[2],dim_c)
 
-        self.dec_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(), 
-                                           nn.LayerNorm(128,elementwise_affine=False, bias=False),
-                                           nn.Linear(128,128),nn.SiLU(),
-                                           nn.Linear(128,dec_emb_size))
-
-        self.enc_pos_emb   = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                           nn.LayerNorm(128,elementwise_affine=False, bias=False),
-                                           nn.Linear(128,128),nn.SiLU(),
-                                           nn.Linear(128,enc_emb_size))
-
-        self.enc_scale_emb = nn.Sequential(nn.Linear(dim_c,128),nn.SiLU(),
-                                           nn.LayerNorm(128,elementwise_affine=False, bias=False),
-                                           nn.Linear(128,128),nn.SiLU(),
-                                           nn.Linear(128,enc_emb_size))
+        dec_d_model = int(d_model*d_model_layerwise_scale[-1])
+        self.dec_pos_emb   = Cond_Net(self.num_channel,self.num_patch,dec_d_model,dim_c)
+        self.dec_scale_emb = Cond_Net(self.num_channel,self.num_patch,dec_d_model,dim_c)
 
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def encoding(self,x_in,c_in=None,sampling=False):
@@ -227,10 +214,11 @@ class PatchTSMixer(layer):
 
     #Z_in : input data in the dimension of Batch x Embedding
     def decoding(self,z_in,c_in=None):
+        nb = z_in.size(0)
 
         if c_in != None:
-            c0   = self.  dec_pos_emb(c_in)
-            c1   = self.dec_scale_emb(c_in)
+            c0   = self.  dec_pos_emb(c_in).reshape(nb,-1)
+            c1   = self.dec_scale_emb(c_in).reshape(nb,-1)
 
             z_in = c0 + z_in*(c1+1)
 
@@ -257,3 +245,4 @@ class PatchTSMixer(layer):
         z_in= self.encoding(x_in,c_in,sampling=True)
         out = self.decoding(z_in,c_in)
         return out
+

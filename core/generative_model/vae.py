@@ -43,14 +43,8 @@ class VAE(nn.Module):
 
         self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,dim_c=dim_c,pdf=pdf,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,dec_type=dec_type)
 
-        self.z_mu = nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),
-                                  nn.Linear(  256,256),nn.SiLU(),
-                                  nn.Linear(  256,dim_z))
-
-        self.z_logvar= nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),
-                                     nn.Linear(  256,256),nn.SiLU(),
-                                     nn.Linear(  256,dim_z))
-
+        self.z_mu     = nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),nn.Linear(  256,dim_z))
+        self.z_logvar = nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),nn.Linear(  256,dim_z))
 
     def forward(self, X):
 

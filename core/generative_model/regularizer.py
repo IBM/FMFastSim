@@ -24,6 +24,8 @@ class regularizer:
             self.reg_model = moment_diff
         elif reg_model == 'mean_diff':
             self.reg_model = mean_diff
+        elif reg_model == 'l2_diff':
+            self.reg_model = l2_diff
         elif reg_model == 'min_max':
             self.reg_model = min_max
         elif reg_model == 'none':
@@ -45,16 +47,16 @@ def mean_diff(y_hat,y_true):
 
     reg = 0
     for dim in avg_dim:
-        reg = reg + (y_true.mean(avg_dim) - y_hat.mean(avg_dim)).pow(2).mean()
+        reg = reg + (y_true.mean(dim) - y_hat.mean(dim)).pow(2).mean()
 
     return reg
 
-def moment_diff(y_hat,y_true):
+def moment_diff(y_hat,y_true,moments=[1,2,4]):
 
     avg_dim = [(1,2),(1,3),(2,3)]
 
     reg = 0
-    for m in [1,2,4]:
+    for m in moments:
         for dim in avg_dim:
             m_true = get_moments(y_true,avg_dim=dim,order=m) + 1.e-3
             m_hat  = get_moments(y_hat ,avg_dim=dim,order=m) + 1.e-3
@@ -63,6 +65,18 @@ def moment_diff(y_hat,y_true):
 
             #reg = reg +(m_true-m_hat).pow(2).mean()
             #print(f'moment {m} for x{i} has max {m_true.max().item()}')
+    return reg
+
+def l2_diff(y_hat,y_true):
+
+    avg_dim = [(1,2),(1,3),(2,3)]
+
+    reg = 0
+    for dim in avg_dim:
+        m_true = y_true.pow(2).mean(dim)+ 1.e-3
+        m_hat  = y_hat .pow(2).mean(dim)+ 1.e-3
+
+        reg += (m_hat.log()-m_true.log()+m_true/m_hat).mean()
     return reg
 
 

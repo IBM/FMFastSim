@@ -29,7 +29,7 @@ from core.handler import ModelHandler
 from core.generative_model.prior_dist import prior_dist
 from core.generative_model.regularizer import regularizer
 
-from core.layers.lib_mixer import Mixer3D,init_weights
+from core.layers.lib_mixer import Mixer3D,Cond_Net,init_weights
 
 class GAN(nn.Module):
     def __init__(self, network=None, 
@@ -429,47 +429,6 @@ class DNet_Core(nn.Module):
             z0 = self.module[i](b+(s+1)*z0)
 
         return z0
-
-class Cond_Net(nn.Module):
-    def __init__(self,dim_x0,dim_x1,dim_x2,dim_c,activation=nn.SiLU,norm=False):
-        super().__init__()
-
-        self.dim_c  = dim_c
-        self.dim_x0 = dim_x0
-        self.dim_x1 = dim_x1
-        self.dim_x2 = dim_x2
-
-        self.norm = norm
-
-        self.x0_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
-                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
-                                    nn.Linear(64,64),activation(),
-                                    nn.Linear(64,dim_x0))
-
-        self.x1_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
-                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
-                                    nn.Linear(64,64),activation(),
-                                    nn.Linear(64,dim_x1))
-
-        self.x2_net = nn.Sequential(nn.Linear(dim_c,64),activation(),
-                                    nn.LayerNorm(64,elementwise_affine=False, bias=False),
-                                    nn.Linear(64,64),activation(),
-                                    nn.Linear(64,dim_x2))
-
-    def forward(self,c_in):
-        #create dimensional embedding
-        x0 = self.x0_net(c_in)
-        x1 = self.x1_net(c_in)
-        x2 = self.x2_net(c_in)
-
-        y0 = x0.unsqueeze(-1).repeat(1,1,self.dim_x1)   + x1.unsqueeze(1)
-        y1 = y0.unsqueeze(-1).repeat(1,1,1,self.dim_x2) + x2.unsqueeze(1).unsqueeze(1)
-
-        if self.norm:
-            y1 = F.layer_norm(y1,[self.dim_x0,self.dim_x1,self.dim_x2])
-
-        return y1
-
 
 class CR_D_Net(nn.Module):
     def __init__(self,dim_x,dim_c,avg_dim,activation,gan_model='gan',moment=1):
