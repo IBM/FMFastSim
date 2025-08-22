@@ -5,6 +5,7 @@ from core.generative_model.ae  import AEHandler
 from core.generative_model.mle import MLEHandler
 from core.generative_model.gan import GANHandler
 from core.generative_model.diffusion import DiffusionHandler
+from core.generative_model.flow_matching import FlowMatchingHandler
 
 from core.layers.Mixer import Mixer
 from core.layers.MixerTF import MixerTF

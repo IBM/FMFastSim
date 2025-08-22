@@ -93,12 +93,17 @@ class Two_Param_PDF(nn.Module):
             self.pdf_param_a = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
             self.pdf_param_b = Mixer2D(dim0,dim1,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,norm=norm)
         elif self.dec_type == 'conv':
+            net = []
             norm_dim = [dim_a,dim_r,dim_v]
-            self.pdf_param = nn.Sequential(nn.LayerNorm(norm_dim,elementwise_affine=False, bias=False),
-                                           nn.Conv2d(  dim_a,4*dim_a,3,padding='same'),nn.SiLU(),
-                                           nn.Conv2d(4*dim_a,4*dim_a,3,padding='same'),nn.SiLU(),
-                                           nn.Conv2d(4*dim_a,2*dim_a,1))
-                                           
+            if norm == 'layer':
+                net += [nn.LayerNorm(norm_dim,elementwise_affine=False,bias=False)]
+            elif norm == 'rms':
+                net += [nn.RMSNorm(norm_dim,elementwise_affine=False)]
+            net += [nn.Conv2d(  dim_a,4*dim_a,3,padding='same'),nn.SiLU(),
+                    nn.Conv2d(4*dim_a,4*dim_a,3,padding='same'),nn.SiLU(),
+                    nn.Conv2d(4*dim_a,2*dim_a,1)]
+
+            self.pdf_param = nn.Sequential(*net)
 
     #X_in : input data in the dimension of Batch x Radial x Azimuthal x Vertical
     def forward(self,x_in):

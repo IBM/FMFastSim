@@ -64,6 +64,8 @@ def ResolveModel(model_info,**kwargs):
         gen_model =  core.GANHandler
     elif model_type=='Diffusion':
         gen_model =  core.DiffusionHandler
+    elif model_type=='Flow_Matching':
+        gen_model =  core.FlowMatchingHandler
     else:
         raise ValueError
 
@@ -78,8 +80,8 @@ def ResolveModel(model_info,**kwargs):
     else:
         raise ValueError
 
-    if 'load_model' in model_info:
-        load_model = model_info['load_model']
+    if 'load_file' in model_info:
+        load_model = model_info['load_file']
     else:
         load_model = None
 
@@ -433,7 +435,7 @@ class ModelHandler:
 
 
 class ValidationPlotCallback:
-    def __init__(self, verbose, handler, theta, phi, energy, geometry, dataloader, max_valid_events=None,_log_to_wandb=False):
+    def __init__(self, verbose, handler, theta, phi, energy, geometry, dataloader, max_valid_events=None,_log_to_wandb=False,save_showers=False,keep_previous=False):
         self.verbose = verbose
         self.handler = handler
         self.val_phi = phi
@@ -441,9 +443,13 @@ class ValidationPlotCallback:
         self.val_energy = energy
         self.val_geometry = geometry
         self.max_events = max_valid_events
-        self._setup(dataloader)
+
+        self.save_showers = save_showers
+        self.keep_previous = keep_previous
 
         self._log_to_wandb = _log_to_wandb
+
+        self._setup(dataloader)
 
     def _setup(self,dataloader):
 
@@ -483,9 +489,11 @@ class ValidationPlotCallback:
 
         self.valid_data = dataloader._torch(shower,energy,theta,phi,geo)
 
+        self.valid_name = f"Geo_{self.val_geometry}_E_{self.val_energy}_Theta_{self.val_theta}_Phi_{self.val_phi}"
+
         #delete previous images
         val_dir = self.handler._val_dir
-        if os.path.exists(val_dir):
+        if os.path.exists(val_dir) and (not self.keep_previous):
             files = glob.glob(val_dir+'/*.png')
             for f in files:
                 os.remove(f)
@@ -526,17 +534,21 @@ class ValidationPlotCallback:
 
             val_dir = self.handler._val_dir
 
+            if self.save_showers:
+                torch.save(showers,f"{val_dir}/Orig_Shower_{self.valid_name}.pt")
+                torch.save(generated_events,f"{val_dir}/Generated_Shower_{self.valid_name}.pt")
+
             compare_profiles(showers,generated_events,self.val_energy,self.val_theta,
                              self.val_geometry,val_dir,particle_phi=self.val_phi)
 
-            observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
-               "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
-            plot_names = [
-               f"{val_dir}/{metric}_Geo_{self.val_geometry}_E_{self.val_energy}_Theta_{self.val_theta}_Phi_{self.val_phi}"
-               for metric in observable_names
-            ]
-
             if self._log_to_wandb:
+                observable_names = ["LatProf", "LongProf", "PhiProf", "E_tot", "E_cell", "E_cell_non_log", "E_cell_non_log_xlog",
+                   "E_layer", "LatFirstMoment", "LatSecondMoment", "LongFirstMoment", "LongSecondMoment", "Radial_num_zeroes"]
+                plot_names = [
+                   f"{val_dir}/{metric}_{self.valid_name}"
+                   for metric in observable_names
+                ]
+
                 for file in plot_names:
                    wandb.log({file: wandb.Image(f"{file}.png")})
 

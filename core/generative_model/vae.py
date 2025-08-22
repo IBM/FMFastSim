@@ -24,7 +24,7 @@ from core.generative_model.generative_decoder import Decoder_Distribution
 from core.generative_model.regularizer import regularizer
 
 class VAE(nn.Module):
-    def __init__(self, network, kl_coef=1.0, reg_coef=0.0, reg_model = 'none', decoder_distribution = 'gamma',mlp_ratio=4,mlp_layers=3,dec_type='mixer'):
+    def __init__(self, network, kl_coef=1.0, reg_coef=0.0, reg_model = 'none', decoder_distribution = 'gamma',mlp_ratio=4,mlp_layers=3,dec_type='mixer',dec_norm='layer'):
         super().__init__()
 
         self.model = network
@@ -41,7 +41,9 @@ class VAE(nn.Module):
 
         pdf = decoder_distribution
 
-        self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,dim_c=dim_c,pdf=pdf,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,dec_type=dec_type)
+        norm = dec_norm
+
+        self.gen_decoder = Decoder_Distribution(dim_r=dim_r,dim_a=dim_a,dim_v=dim_v,dim_c=dim_c,pdf=pdf,mlp_ratio=mlp_ratio,mlp_layers=mlp_layers,dec_type=dec_type,norm=norm)
 
         self.z_mu     = nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),nn.Linear(  256,dim_z))
         self.z_logvar = nn.Sequential(nn.Linear(dim_c,256),nn.SiLU(),nn.Linear(  256,dim_z))

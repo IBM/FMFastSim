@@ -27,6 +27,7 @@ torch.manual_seed(1231)
 from utils.data_scaling import voxel_scaling
 
 from core import ResolveModel
+from core.handler import ValidationPlotCallback
 from dataloader.data_handler import DataInfo
 from utils.validation_utils import compare_profiles
 
@@ -46,7 +47,7 @@ def main():
     scale_info = load_params['scale_info']
 
     #override model loading
-    model_info['load_model'] = model_file
+    model_info['load_file'] = model_file
 
     #load gpu info
     use_gpu = False
@@ -83,44 +84,17 @@ def main():
     # Generating Validation plots
     print('Start Validation')
 
-    plot_info = valid_info['valid_plots']
     val_dir   = valid_info['plot_loc']
     if not os.path.exists(val_dir):
         os.system(f"mkdir -p {val_dir}")
     else:
         os.system(f"rm -rf {val_dir}/*")
 
-    energy = valid_data.data_cond_e*DataInfo().MAX_ENERGY
-    angle  = valid_data.data_cond_a*DataInfo().MAX_ANGLE
-    geo    = valid_data.data_cond_g
-    geo    = np.array(['Scipb' if geo[i,0] == 1 else 'SiW' for i in range(len(geo))])
+    model_handler._val_dir = val_dir
 
-    for _angle, _energy, _geo in plot_info:
-        id_a = angle  == _angle
-        id_e = energy == _energy
-        id_g = geo    == _geo
-
-        idx = id_a & id_e & id_g
-
-        input_data = valid_data._torch(valid_data.data_energy[idx],
-                                       valid_data.data_cond_e[idx],
-                                       valid_data.data_cond_a[idx],
-                                       valid_data.data_cond_g[idx])
-        if rank == 0:
-            print(f'{input_data[0].size(0)} validation data for angle: {_angle}, energy: {_energy}, geo: {_geo}')
-
-        model_handler._set_model_inference()
-        with torch.no_grad():
-            x_in = model_handler._to_dev(input_data)
-            generated_events = model_handler.generate(x_in)
-    
-        showers          = input_data[0]   .to('cpu').numpy()
-        generated_events = generated_events.to('cpu').numpy()
-
-        showers          = valid_data.scale_method.inverse_transform(showers,         _energy)
-        generated_events = valid_data.scale_method.inverse_transform(generated_events,_energy)
-
-        compare_profiles(showers,generated_events,_energy,_angle,_geo,val_dir)
+    for args in valid_info['valid_plots']:
+        valid_func = ValidationPlotCallback(1,model_handler,*args, valid_data, save_showers=True, keep_previous=True)
+        valid_func(-1)
 
 if __name__ == "__main__":
     sys.exit(main())
