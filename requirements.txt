@@ -3,5 +3,5 @@ matplotlib==3.5.1
 numpy==1.26.4
 plotly==5.17.0
 scipy==1.12.0
-torch==2.6.0
-transformers==4.53.3
+torch
+transformers
